@@ -1,0 +1,38 @@
+name: E2E
+
+on:
+  pull_request:
+    types: [labeled]
+  push:
+    branches: [main]
+
+jobs:
+  e2e:
+    # Run on merges to main, or when the 'e2e' label is added to a PR.
+    if: github.event_name == 'push' || github.event.label.name == 'e2e'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install all dependencies (server + agent + test)
+        run: uv sync --all-extras --all-groups
+
+      # The control station runs inside Docker; the agent runs as a local
+      # subprocess on the CI runner, connected to the server via SSH tunnel.
+      # The agent communicates back on localhost so no extra network config needed.
+      - name: Build control station Docker image
+        run: docker compose -f deploy/docker-compose.yml build
+
+      - name: Run e2e test suite
+        # pytest fixtures in tests/e2e/ manage docker compose up/down for the
+        # server and spawn/teardown the agent subprocess.
+        run: uv run pytest tests/e2e -v --no-cov

@@ -177,6 +177,7 @@ Ship as default scripts that target owners can opt into. Each is a `.sh` (Linux/
 - [ ] **11.2** `restart_machine` — restart target.
 - [ ] **11.3** `start_steam`.
 - [ ] **11.4** `start_llama_server` — persistent; parameters for model path, context size, GPU layers.
+- [ ] **11.5** Add SPDX license headers to all `.sh` and `.ps1` scripts. Extend the `insert-license` pre-commit hook with a second entry targeting `\.sh$` and `\.ps1$` (both use `#` comment style).
 
 (Wake-on-LAN is built-in, not a script — see Phase 7.)
 

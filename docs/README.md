@@ -106,4 +106,10 @@ control-station-lite/
 
 ## License
 
-TBD.
+GNU Affero General Public License v3.0 or later, **with an additional permission for distribution through app stores** (see `LICENSE`).
+
+AGPLv3 is chosen over the regular GPLv3 because this project is intended to be deployed as a network service. Plain GPL is triggered only by distribution of binaries or modified source; AGPL extends that obligation to anyone who modifies the software and makes it available over a network. A fork that is operated as a SaaS offering is required to publish its source under the same terms.
+
+The App Store exception permits distribution through application stores whose terms of service would otherwise conflict with the AGPL (notably Apple's App Store), provided the source remains independently available under the unmodified AGPL.
+
+Each source file carries an SPDX identifier: `SPDX-License-Identifier: AGPL-3.0-or-later`.
