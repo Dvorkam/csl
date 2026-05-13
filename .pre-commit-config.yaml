@@ -1,4 +1,20 @@
 repos:
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.5
+    hooks:
+      - id: insert-license
+        name: license header (Python)
+        files: \.py$
+        exclude: |
+          (?x)^(
+            tests/|
+            .*/migrations/|
+            .*/__init__\.py$
+          )
+        args:
+          - --license-filepath=.license-header
+          - --comment-style=#
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.12
     hooks:
