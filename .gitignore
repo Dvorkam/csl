@@ -13,3 +13,4 @@ htmlcov/
 *.sqlite
 secrets/
 .env
+.claude/settings.local.json

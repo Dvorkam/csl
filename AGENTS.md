@@ -96,6 +96,7 @@ The bootstrap script (`scripts/setup.sh`) gets a dedicated bats test suite cover
 
 - `ruff` config in `pyproject.toml`; line length 100; format on save.
 - Type hints required on all public functions. `mypy` strict mode for `control_station_lite/shared/`, normal mode elsewhere.
+- Every Python source file starts with `# SPDX-License-Identifier: AGPL-3.0-or-later` followed by a brief copyright header. See `SOURCE_HEADER.txt` for the canonical template.
 - Pydantic models for all data crossing a boundary (HTTP, file, IPC). No bare dicts in API signatures.
 - Async-first on both server and agent. Don't mix sync and async I/O within a request path.
 - No `print()` in library code. Use `logging` (server) or structured logger (agent).
