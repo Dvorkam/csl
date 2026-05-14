@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import logging
 import os
-import platform
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from control_station_lite.shared._validation import validate_stripping_unknowns
+from control_station_lite.shared.platform_info import IS_WINDOWS
 
 __all__ = [
     "AgentConfig",
@@ -40,7 +40,7 @@ class ConfigError(ValueError):
 
 def _csl_dir() -> Path:
     """Return the platform-appropriate base directory for agent data."""
-    if platform.system() == "Windows":
+    if IS_WINDOWS:
         appdata = os.environ.get("APPDATA", "")
         return Path(appdata) / "control-station-lite"
     return Path.home() / ".csl"
