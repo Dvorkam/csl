@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(git commit -m ' *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(mkdir -p /home/dvorkam/repos/csl/docs/agent_ref)"
+    ],
+    "additionalDirectories": [
+      "/home/dvorkam/repos/csl/docs"
     ]
   }
 }
