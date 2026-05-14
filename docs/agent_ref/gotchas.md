@@ -22,6 +22,21 @@ The integration tests cover both; check them before changing the agent-start flo
 Use the `aiosqlite` driver (already in `[server]` extras). Configure `journal_mode=WAL` on the
 engine to allow concurrent reads without blocking writes.
 
+## schemathesis 4.x API
+
+The public API changed significantly in schemathesis 4.x:
+- Load ASGI apps via `schemathesis.openapi.from_asgi("/openapi.json", app)` — not `schemathesis.from_asgi(...)`.
+- Call a case via `case.call(app=app)` — not `case.call_asgi(...)` or `case.call_wsgi(...)`.
+- Custom checks live in `schemathesis.checks`, not `schemathesis.specs.openapi.checks`.
+- Check signature: `(ctx: CheckContext, response: Response, case: Case) -> bool | None`.
+
+## `importlib.metadata.version()` in tests
+
+`importlib.metadata.version("control-station-lite")` raises `PackageNotFoundError` in test
+environments where the package is not installed as an editable install (`uv sync` should handle
+this, but it can fail in CI if the install step is skipped). Any module that calls this at import
+time will break test collection. Always guard with a try/except and fall back to `"0.0.0-dev"`.
+
 ## First PR on a fresh repo
 
 GitHub sets the first-pushed branch as the repository default. When there is no `main` yet:
