@@ -22,6 +22,17 @@ The integration tests cover both; check them before changing the agent-start flo
 Use the `aiosqlite` driver (already in `[server]` extras). Configure `journal_mode=WAL` on the
 engine to allow concurrent reads without blocking writes.
 
+## approvals.json / filesystem drift
+
+`ApprovalsManager` treats `approvals.json` as authoritative. If a user manually deletes
+an approved script file without clearing its JSON entry, the state machine will still
+report `approved` and `script_runner` will fail when it tries to execute it.  The reverse
+(file present, JSON entry deleted) leaves an orphaned file that can never be run.
+
+A future reconciliation pass on agent startup should cross-check JSON state against
+filesystem reality — similar to how `state.py` reattaches to or marks dead persistent
+processes.  Until that pass exists, treat manual edits to `~/.csl/` as unsupported.
+
 ## schemathesis 4.x API
 
 The public API changed significantly in schemathesis 4.x:
