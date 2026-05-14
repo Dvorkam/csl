@@ -11,13 +11,14 @@
 
 from __future__ import annotations
 
-import copy
 import logging
 from enum import StrEnum
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from control_station_lite.shared._validation import validate_stripping_unknowns
 
 __all__ = ["ParamDescriptor", "ParamType", "ScriptMeta", "ScriptMetaError", "parse_meta_yaml"]
 
@@ -92,15 +93,6 @@ class ScriptMeta(BaseModel):
         return self
 
 
-def _delete_at_path(obj: Any, path: tuple[str | int, ...]) -> None:
-    """Delete the value at path from a nested dict/list structure in-place."""
-    for part in path[:-1]:
-        obj = obj[part]
-    last = path[-1]
-    if isinstance(obj, dict):
-        obj.pop(last, None)
-
-
 def parse_meta_yaml(text: str) -> ScriptMeta:
     """Parse and validate a .meta.yaml string, returning a sanitized ScriptMeta.
 
@@ -125,34 +117,10 @@ def parse_meta_yaml(text: str) -> ScriptMeta:
         raise ScriptMetaError("meta.yaml must be a YAML mapping at the top level")
 
     try:
-        return ScriptMeta.model_validate(raw)
-    except ValidationError as exc:
-        errors = exc.errors()
-        extra_errors = [e for e in errors if e["type"] == "extra_forbidden"]
-        real_errors = [e for e in errors if e["type"] != "extra_forbidden"]
-
-        for e in extra_errors:
-            loc = " -> ".join(str(part) for part in e["loc"])
-            logger.warning("unknown field in meta.yaml will be ignored: %s", loc)
-
-        if real_errors:
-            msg = "; ".join(
-                f"{' -> '.join(str(p) for p in e['loc'])}: {e['msg']}" for e in real_errors
-            )
-            raise ScriptMetaError(msg) from exc
-
-        # All errors were extra-field violations — sanitize the input and build
-        # the model from the cleaned dict.  This second model_validate call is
-        # not for error discovery (Pydantic already found every error in the
-        # first pass); it is the only way to obtain a model instance, since
-        # model_validate either returns a model or raises — never both.
-        # The call is guaranteed to succeed because the only problems were the
-        # fields we just removed.
-        cleaned = copy.deepcopy(raw)
-        for e in extra_errors:
-            _delete_at_path(cleaned, e["loc"])
-
-        try:
-            return ScriptMeta.model_validate(cleaned)
-        except Exception as inner_exc:
-            raise ScriptMetaError(str(inner_exc)) from inner_exc
+        return validate_stripping_unknowns(
+            ScriptMeta,
+            raw,
+            log_prefix="unknown field in meta.yaml will be ignored",
+        )
+    except Exception as exc:
+        raise ScriptMetaError(str(exc)) from exc

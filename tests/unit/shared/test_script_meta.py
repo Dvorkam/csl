@@ -124,38 +124,24 @@ class TestParseMetaYamlHappy:
 
 
 # ---------------------------------------------------------------------------
-# parse_meta_yaml — unknown fields: rejected but warned, not crashed
+# parse_meta_yaml — unknown fields (shared behaviour via _validation.py)
 # ---------------------------------------------------------------------------
+# The validate_stripping_unknowns logic is tested exhaustively in
+# tests/unit/shared/test_validation.py.  Here we only verify that
+# parse_meta_yaml integrates it correctly (warning emitted, model usable).
 
 
-class TestUnknownFieldsWarnedNotCrashed:
-    def test_unknown_top_level_field_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        with caplog.at_level("WARNING", logger="control_station_lite.shared.script_meta"):
+class TestUnknownFieldsIntegration:
+    def test_unknown_field_warned_and_model_still_returned(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level("WARNING"):
             meta = parse_meta_yaml("description: ok\nunknown_field: bad")
         assert any("unknown_field" in r.message for r in caplog.records)
         assert meta.description == "ok"
-
-    def test_unknown_top_level_field_not_on_model(self, caplog: pytest.LogCaptureFixture) -> None:
-        with caplog.at_level("WARNING", logger="control_station_lite.shared.script_meta"):
-            meta = parse_meta_yaml("unknown_field: bad")
         assert not hasattr(meta, "unknown_field")
 
-    def test_unknown_param_field_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        yaml_text = dedent("""
-            params:
-              - name: foo
-                type: string
-                required: true
-                unknown_key: surprise
-        """)
-        with caplog.at_level("WARNING", logger="control_station_lite.shared.script_meta"):
-            meta = parse_meta_yaml(yaml_text)
-        assert any("unknown_key" in r.message for r in caplog.records)
-        assert meta.params[0].name == "foo"
-
-    def test_unknown_field_alongside_real_error_raises(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_unknown_field_with_real_error_raises_script_meta_error(self) -> None:
         yaml_text = dedent("""
             unknown_field: bad
             params:
@@ -163,9 +149,8 @@ class TestUnknownFieldsWarnedNotCrashed:
                 type: not_a_real_type
                 required: true
         """)
-        with caplog.at_level("WARNING", logger="control_station_lite.shared.script_meta"):
-            with pytest.raises(ScriptMetaError):
-                parse_meta_yaml(yaml_text)
+        with pytest.raises(ScriptMetaError):
+            parse_meta_yaml(yaml_text)
 
 
 # ---------------------------------------------------------------------------

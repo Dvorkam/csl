@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git commit -m ' *)",
       "Bash(git check-ignore *)",
-      "Bash(mkdir -p /home/dvorkam/repos/csl/docs/agent_ref)"
+      "Bash(mkdir -p /home/dvorkam/repos/csl/docs/agent_ref)",
+      "Bash(echo \"exit code: $?\")"
     ],
     "additionalDirectories": [
       "/home/dvorkam/repos/csl/docs"
