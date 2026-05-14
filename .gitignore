@@ -14,3 +14,4 @@ htmlcov/
 secrets/
 .env
 .claude/settings.local.json
+docs/agent_ref/env.md

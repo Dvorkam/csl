@@ -637,12 +637,16 @@ Target machines install with `pip install control-station-lite[agent]`; the NAS 
 
 ### 9.2 Docker
 
-`deploy/Dockerfile` builds a slim Python image with the `[server]` extras installed. `deploy/docker-compose.yml` defines two services:
+Two containers, one prod compose file, one dev override:
 
 - `app` — the FastAPI server (uvicorn).
-- `nginx` — TLS termination and reverse proxy.
+- `nginx` — edge concerns only: TLS termination, rate limiting, request-size limits.
 
 Volumes mounted: `/var/lib/control-station-lite/{db,scripts,secrets,certs,logs}`.
+
+**Production image** (`deploy/Dockerfile`): package baked in at build time, pinned to the release version. Built and pushed by `release.yml`, tagged to match the PyPI release. No runtime dependency on the source tree.
+
+**Dev image** (`deploy/Dockerfile`, dev stage + `deploy/docker-compose.override.yml`): bind-mounts the source tree and does an editable install so code changes are reflected without rebuilding. The asymmetry between dev and prod is intentional.
 
 ### 9.3 systemd
 
