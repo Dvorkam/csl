@@ -1,17 +1,33 @@
+# Secrets
+.env
+secrets/
+
+# Personal Environment related folders
+.claude/settings.local.json
+.vscode
+docs/agent_ref/env.md
+
+
+# Python related locals
 __pycache__/
 *.py[cod]
 *.egg-info/
+.venv/
+
+
+# Test related artifacts
+htmlcov/
+.pytest_cache/
+.coverage
+
+# Build artifacts
 dist/
 build/
-.venv/
+
+# Formating artifacts
 .mypy_cache/
 .ruff_cache/
-.pytest_cache/
-htmlcov/
-.coverage
+
+# DB related artifacts
 *.db
 *.sqlite
-secrets/
-.env
-.claude/settings.local.json
-docs/agent_ref/env.md

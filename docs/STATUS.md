@@ -7,21 +7,22 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 1.6** — `agent/script_runner.py`  
-Execute one-off scripts with parameters as `CSL_PARAM_*` env vars. Refuse to run
-unapproved scripts. Capture stdout, stderr, exit code. Cross-platform.  
-Branch: `feature/task-1.6-script-runner`
+**Task 1.7** — `agent/process_manager.py`  
+Start persistent processes (approval-gated), track them, allow kill. Platform-appropriate
+process group handling so kill cleans up children.  
+Branch: `feature/task-1.7-process-manager`
 
 ## Up next
 
-**Task 1.7** — `agent/process_manager.py`  
-Start persistent processes (approval-gated), track them, allow kill. Platform-appropriate
-process group handling so kill cleans up children.
+**Task 1.8** — `agent/log_stream.py`  
+Persistent jobs write stdout/stderr to `logs/{job_uuid}.log`. SSE endpoint tails the
+file and pushes new lines. Multiple subscribers supported.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 1.6 | `agent/script_runner.py`: cross-platform execution (.sh/.ps1/.bat); `CSL_PARAM_*` env vars; approval gate; platform markers in tests | `feature/task-1.6-script-runner` |
 | 1.5 | `agent/approvals.py`: full state machine, atomic JSON write, audit log, thread-safe; 46 unit tests | `feature/task-1.5-approvals` |
 | 1.4 | `agent/main.py`: FastAPI app; `/healthz` implemented; 3 stub endpoints (501); `127.0.0.1`-only binding; 10 unit + 4 contract tests | `feature/task-1.4-agent-main` |
 | 1.3 | `agent/config.py`: platform-aware config loader; `csl_dir` as path root; shared `_validation.py` extracted; 72 unit tests | `feature/task-1.3-agent-config` |
