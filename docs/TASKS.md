@@ -22,7 +22,7 @@ Each task should ship with:
 
 The agent is testable in isolation (no control station needed). Build it first to derisk the cross-platform process management work and the approval state machine.
 
-- [ ] **1.1** Define `shared/models.py` Pydantic models: `JobRequest`, `JobStatus`, `LogChunk`, `AgentHealth`, `ScriptDescriptor`, `ApprovalState`, `StageScriptRequest`, `StageScriptResponse`.
+- [x] **1.1** Define `shared/models.py` Pydantic models: `JobRequest`, `JobStatusResponse`, `LogChunk`, `AgentHealth`, `ScriptDescriptor`, `ApprovalState`, `StageScriptRequest`, `StageScriptResponse`. (`JobStatus` and `ApprovalState` are `StrEnum`s; `JobStatusResponse` is the Pydantic model for the API response.)
 - [ ] **1.2** Implement `shared/script_meta.py`: parse `*.meta.yaml`, validate against the schema (§4.1), produce typed param descriptors. Reject unknown fields strictly.
 - [ ] **1.3** Implement `agent/config.py`: load `config.yaml` from the platform's app-data directory, fall back to sensible defaults. Includes `approval_policy.auto_approve` list.
 - [ ] **1.4** Implement `agent/main.py`: minimal FastAPI app with `/healthz`, `/jobs`, `/scripts/{name}/state`, and `/scripts/{name}/stage` endpoints. Bind to `127.0.0.1` only — refuse to bind to any other address.
