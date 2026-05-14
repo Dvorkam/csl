@@ -7,21 +7,22 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 1.4** — `agent/main.py`  
-Minimal FastAPI app with `/healthz`, `/jobs`, `/scripts/{name}/state`, `/scripts/{name}/stage`.
-Bind to `127.0.0.1` only.  
-Branch: `feature/task-1.4-agent-main`
+**Task 1.5** — `agent/approvals.py`  
+Full approval state machine over `absent → pending → approved`, etc. Persists to
+`approvals.json` atomically. All transitions audited to a local log file.  
+Branch: `feature/task-1.5-approvals`
 
 ## Up next
 
-**Task 1.5** — `agent/approvals.py`  
-Full approval state machine over `absent → pending → approved`, etc. Persists to
-`approvals.json` atomically. All transitions audited to a local log file.
+**Task 1.6** — `agent/script_runner.py`  
+Execute one-off scripts with parameters as `CSL_PARAM_*` env vars. Refuse to run
+unapproved scripts. Capture stdout, stderr, exit code. Cross-platform.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 1.4 | `agent/main.py`: FastAPI app; `/healthz` implemented; 3 stub endpoints (501); `127.0.0.1`-only binding; 10 unit + 4 contract tests | `feature/task-1.4-agent-main` |
 | 1.3 | `agent/config.py`: platform-aware config loader; `csl_dir` as path root; shared `_validation.py` extracted; 72 unit tests | `feature/task-1.3-agent-config` |
 | 1.2 | `shared/script_meta.py`: YAML parser + validator; unknown fields warned+stripped not crashed; 26 unit tests | `feature/task-1.2-script-meta` |
 | 1.1 | `shared/models.py`: all 8 shared Pydantic models + enums; 18 unit tests, 100% coverage | `feature/task-1.1-shared-models` |
