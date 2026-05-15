@@ -178,6 +178,14 @@ class ProcessManager:
             _poll_record(record)
         return sum(1 for r in records if r.status == JobStatus.running)
 
+    def get_log_path(self, job_uuid: str) -> Path:
+        """Return the log file path for *job_uuid*.
+
+        Raises:
+            JobNotFoundError: if *job_uuid* is not tracked.
+        """
+        return self._get_record(job_uuid).log_path
+
     def _get_record(self, job_uuid: str) -> _ProcessRecord:
         with self._lock:
             record = self._jobs.get(job_uuid)
