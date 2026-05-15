@@ -12,6 +12,11 @@ Every `.py` file under `control_station_lite/` must start with the SPDX block fr
 
 When Phase 11 shell scripts are added, extend the hook with a second entry for `.sh` / `.ps1` (see Task 11.5).
 
+## Platform detection
+
+Use `IS_LINUX`, `IS_WINDOWS`, `IS_MACOS` from `shared/platform_info` — never call
+`platform.system()` inline. See `gotchas.md` for cross-platform test marker discipline.
+
 ## Logging vs warnings
 
 Use `logging.getLogger(__name__)` everywhere in library and application code. The `warnings`
