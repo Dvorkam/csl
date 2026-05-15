@@ -28,9 +28,9 @@ The agent is testable in isolation (no control station needed). Build it first t
 - [x] **1.4** Implement `agent/main.py`: minimal FastAPI app with `/healthz`, `/jobs`, `/scripts/{name}/state`, and `/scripts/{name}/stage` endpoints. Bind to `127.0.0.1` only — refuse to bind to any other address.
 - [x] **1.5** Implement `agent/approvals.py`: full state machine over `absent → pending → approved`, `approved → update_pending → approved | rejected`, etc. Persists to `approvals.json` atomically (write to temp + rename). All transitions audited to a local log file.
 - [x] **1.6** Implement `agent/script_runner.py`: execute one-off scripts with parameters passed as `CSL_PARAM_*` environment variables. **Refuse to run any script not in `approved` state.** Capture stdout, stderr, exit code. Cross-platform (test on at least Linux and Windows).
-- [ ] **1.7** Implement `agent/process_manager.py`: start persistent processes (also approval-gated), track them, allow kill, return status. Use `subprocess.Popen` with platform-appropriate process group handling so kill cleans up children.
-- [ ] **1.8** Implement `agent/log_stream.py`: persistent jobs write stdout/stderr to `logs/{job_uuid}.log`. SSE endpoint `/jobs/{id}/stream` tails the file and pushes new lines. Multiple subscribers supported.
-- [ ] **1.9** Implement `agent/state.py`: serialize/deserialize `running.json`. On startup, reattach to processes whose PIDs are still alive; mark the rest as terminated.
+- [x] **1.7** Implement `agent/process_manager.py`: start persistent processes (also approval-gated), track them, allow kill, return status. Use `subprocess.Popen` with platform-appropriate process group handling so kill cleans up children.
+- [x] **1.8** Implement `agent/log_stream.py`: persistent jobs write stdout/stderr to `logs/{job_uuid}.log`. SSE endpoint `/jobs/{id}/stream` tails the file and pushes new lines. Multiple subscribers supported.
+- [x] **1.9** Implement `agent/state.py`: serialize/deserialize `running.json`. On startup, reattach to processes whose PIDs are still alive; mark the rest as terminated.
 - [ ] **1.10** Implement `agent/lifecycle.py`: background task counts idle seconds; triggers shutdown when `running_persistent == 0 and idle > timeout`.
 - [ ] **1.11** Implement `agent/service_installer.py`:
   - Linux: write `~/.config/systemd/user/csl-agent.service` with `Restart=no`, run `systemctl --user daemon-reload`. **Do not** `--user enable` — the service must be on-demand only.

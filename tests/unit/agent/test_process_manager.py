@@ -3,6 +3,7 @@
 Structure:
   TestApprovalEnforcement     — cross-platform: approval gate before any execution
   TestJobNotFound             — cross-platform: unknown job_uuid raises JobNotFoundError
+  TestSaveAndRestoreState     — cross-platform: running.json round-trip and PID recovery
   TestStart                   — linux_only: process launches, log file created
   TestStatus                  — linux_only: status transitions (running→completed/failed/killed)
   TestKill                    — linux_only: kill cleans up child processes; SIGKILL fallback
@@ -13,6 +14,8 @@ Structure:
   TestWindowsKill             — windows_only: taskkill terminates the process tree
   TestWindowsListJobs         — windows_only: list_jobs reflects all tracked processes
   TestWindowsRunningCount     — windows_only: running_count tracks live processes
+  TestRestoreRealProcess      — linux_only: full recovery integration (start → restart → restore)
+  TestWindowsRestoreRealProcess — windows_only: same integration via PowerShell
 """
 
 import hashlib
@@ -28,6 +31,8 @@ from control_station_lite.agent.process_manager import (
     JobNotFoundError,
     ProcessManager,
     ScriptNotApprovedError,
+    _pid_alive,
+    _ReattachedProcess,
 )
 from control_station_lite.shared.models import JobStatus
 
@@ -126,6 +131,125 @@ class TestJobNotFound:
 
 
 # ---------------------------------------------------------------------------
+# TestSaveAndRestoreState — cross-platform
+# ---------------------------------------------------------------------------
+
+
+class TestSaveAndRestoreState:
+    def test_save_state_creates_running_json(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        manager.save_state()
+        assert paths.state_path.exists()
+
+    def test_save_state_empty_when_no_running_jobs(
+        self, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        manager.save_state()
+        from control_station_lite.agent.state import load_running_state
+
+        assert load_running_state(paths.state_path) == {}
+
+    def test_restore_state_no_file_is_noop(self, paths: CslPaths, manager: ProcessManager) -> None:
+        manager.restore_state()
+        assert manager.list_jobs() == []
+
+    def test_restore_state_dead_pid_not_reattached(
+        self, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        from datetime import UTC, datetime
+
+        from control_station_lite.agent.state import JobEntry, save_running_state
+
+        # Use PID 1 which exists on Linux/macOS but is not ours to track,
+        # and a definitely-dead PID (99999999) for the dead case.
+        dead_pid = 99999999
+        save_running_state(
+            paths.state_path,
+            {
+                "dead-uuid": JobEntry(
+                    script_name="s",
+                    pid=dead_pid,
+                    log_path=paths.logs_dir / "dead-uuid.log",
+                    started_at=datetime.now(UTC),
+                )
+            },
+        )
+        manager.restore_state()
+        assert manager.list_jobs() == []
+
+    def test_restore_state_alive_pid_is_reattached(
+        self, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        """A process whose PID is still alive must appear in list_jobs as running."""
+        import os
+        from datetime import UTC, datetime
+
+        from control_station_lite.agent.state import JobEntry, save_running_state
+
+        my_pid = os.getpid()  # current process is definitely alive
+        job_uuid = "alive-uuid"
+        save_running_state(
+            paths.state_path,
+            {
+                job_uuid: JobEntry(
+                    script_name="alive_script",
+                    pid=my_pid,
+                    log_path=paths.logs_dir / f"{job_uuid}.log",
+                    started_at=datetime.now(UTC),
+                )
+            },
+        )
+        manager.restore_state()
+        jobs = manager.list_jobs()
+        assert any(j.job_uuid == job_uuid for j in jobs)
+        found = next(j for j in jobs if j.job_uuid == job_uuid)
+        assert found.status == JobStatus.running
+        assert found.script_name == "alive_script"
+
+    def test_pid_alive_returns_true_for_own_pid(self) -> None:
+        import os
+
+        assert _pid_alive(os.getpid()) is True
+
+    def test_pid_alive_returns_false_for_nonexistent_pid(self) -> None:
+        assert _pid_alive(99999999) is False
+
+    def test_reattached_process_poll_alive(self) -> None:
+        import os
+
+        rp = _ReattachedProcess(os.getpid())
+        assert rp.poll() is None  # current process is alive → running
+
+    def test_reattached_process_poll_dead(self) -> None:
+        rp = _ReattachedProcess(99999999)
+        assert rp.poll() == -1
+
+    def test_reattached_process_returncode_cached_after_dead(self) -> None:
+        rp = _ReattachedProcess(99999999)
+        rp.poll()
+        assert rp.returncode == -1
+        # second call must not change anything
+        assert rp.poll() == -1
+
+    @pytest.mark.linux_only
+    def test_pid_alive_returns_false_for_zombie(self) -> None:
+        """Zombie processes (exited, not yet reaped) must not be reported as alive."""
+        import os as _os
+
+        child_pid = _os.fork()
+        if child_pid == 0:
+            _os._exit(0)  # child exits immediately — becomes zombie in parent
+
+        time.sleep(0.05)  # allow child to exit and enter zombie state
+        try:
+            result = _pid_alive(child_pid)
+        finally:
+            _os.waitpid(child_pid, 0)  # reap zombie regardless of test outcome
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
 # TestStart — linux_only
 # ---------------------------------------------------------------------------
 
@@ -161,6 +285,18 @@ class TestStart:
         time.sleep(0.3)
         log_path = paths.logs_dir / f"{job_uuid}.log"
         assert "hello" in log_path.read_text()
+
+    def test_start_persists_to_running_json(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        from control_station_lite.agent.state import load_running_state
+
+        _approve_script(approvals, paths, "sleeper", "#!/bin/bash\nsleep 60\n")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        entries = load_running_state(paths.state_path)
+        assert job_uuid in entries
+        assert entries[job_uuid].script_name == "sleeper"
 
 
 # ---------------------------------------------------------------------------
@@ -476,3 +612,156 @@ class TestWindowsRunningCount:
         manager.start("quick", {}, _new_uuid())
         time.sleep(2.0)
         assert manager.running_count() == 0
+
+
+# ---------------------------------------------------------------------------
+# TestRestoreRealProcess — linux_only: full recovery integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.linux_only
+class TestRestoreRealProcess:
+    """End-to-end tests for agent-restart recovery.
+
+    These tests start a real subprocess via one ProcessManager, then discard
+    that manager (simulating an agent restart) and create a fresh one backed
+    by the same paths.  restore_state() must correctly reattach or discard
+    each process.
+    """
+
+    def test_running_process_appears_after_restore(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "#!/bin/bash\nsleep 60\n")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.1)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        jobs = new_manager.list_jobs()
+        found = next((j for j in jobs if j.job_uuid == job_uuid), None)
+        assert found is not None
+        assert found.status == JobStatus.running
+        assert found.script_name == "sleeper"
+
+        new_manager.kill(job_uuid)
+
+    def test_reattached_process_is_killable(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "#!/bin/bash\nsleep 60\n")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.1)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        resp = new_manager.kill(job_uuid)
+        assert resp.status == JobStatus.killed
+
+    def test_completed_process_not_reattached(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        """A process that exits while the agent is down must be silently discarded."""
+        _approve_script(approvals, paths, "quick", "#!/bin/bash\nsleep 0.05\n")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(0.5)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        assert not any(j.job_uuid == job_uuid for j in new_manager.list_jobs())
+
+    def test_restore_preserves_script_name_and_log_path(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "#!/bin/bash\nsleep 60\n")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.1)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        resp = new_manager.get_status(job_uuid)
+        assert resp.script_name == "sleeper"
+        assert new_manager.get_log_path(job_uuid) == paths.logs_dir / f"{job_uuid}.log"
+
+        new_manager.kill(job_uuid)
+
+
+# ---------------------------------------------------------------------------
+# TestWindowsRestoreRealProcess — windows_only: full recovery integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.windows_only
+class TestWindowsRestoreRealProcess:
+    """Windows equivalent of TestRestoreRealProcess using PowerShell scripts."""
+
+    def test_running_process_appears_after_restore(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "Start-Sleep -Seconds 60\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.5)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        jobs = new_manager.list_jobs()
+        found = next((j for j in jobs if j.job_uuid == job_uuid), None)
+        assert found is not None
+        assert found.status == JobStatus.running
+        assert found.script_name == "sleeper"
+
+        new_manager.kill(job_uuid)
+
+    def test_reattached_process_is_killable(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "Start-Sleep -Seconds 60\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.5)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        resp = new_manager.kill(job_uuid)
+        assert resp.status == JobStatus.killed
+
+    def test_completed_process_not_reattached(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "Start-Sleep -Milliseconds 200\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(2.0)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        assert not any(j.job_uuid == job_uuid for j in new_manager.list_jobs())
+
+    def test_restore_preserves_script_name_and_log_path(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "Start-Sleep -Seconds 60\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.5)
+
+        new_manager = ProcessManager(paths, approvals)
+        new_manager.restore_state()
+
+        resp = new_manager.get_status(job_uuid)
+        assert resp.script_name == "sleeper"
+        assert new_manager.get_log_path(job_uuid) == paths.logs_dir / f"{job_uuid}.log"
+
+        new_manager.kill(job_uuid)

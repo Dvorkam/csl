@@ -53,6 +53,8 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     approvals = ApprovalsManager(paths, auto_approve_list=cfg.approval_policy.auto_approve)
     process_mgr = ProcessManager(paths, approvals)
 
+    process_mgr.restore_state()
+
     application.state.config = cfg
     application.state.approvals = approvals
     application.state.process_manager = process_mgr

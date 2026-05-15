@@ -16,6 +16,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ from control_station_lite.agent.script_runner import (
     build_env,
     find_script,
 )
+from control_station_lite.agent.state import JobEntry, load_running_state, save_running_state
 from control_station_lite.shared.models import ApprovalState, JobStatus, JobStatusResponse
 from control_station_lite.shared.platform_info import IS_WINDOWS
 
@@ -50,14 +52,48 @@ class JobNotFoundError(KeyError):
     """Raised when a job_uuid is not tracked by this ProcessManager."""
 
 
+class _ReattachedProcess:
+    """PID-only handle for a process that survived an agent restart.
+
+    We cannot obtain a ``subprocess.Popen`` from an existing PID, but we can
+    check liveness and send signals using OS APIs.  This class provides the
+    subset of the ``Popen`` interface used by ``ProcessManager`` so that
+    reattached jobs can be polled and killed through the same code paths as
+    freshly-started jobs.
+    """
+
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+        self.returncode: int | None = None
+
+    def poll(self) -> int | None:
+        if self.returncode is not None:
+            return self.returncode
+        if not _pid_alive(self.pid):
+            self.returncode = -1
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        """Poll until the process is gone or *timeout* seconds elapse."""
+        if self.returncode is not None:
+            return self.returncode
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        while _pid_alive(self.pid):
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(cmd=[], timeout=timeout or 0.0)
+            time.sleep(0.05)
+        self.returncode = -1
+        return self.returncode
+
+
 @dataclass
 class _ProcessRecord:
     job_uuid: str
     script_name: str
-    # subprocess.Popen that launched the persistent job.
-    # The OS owns the actual process — this handle is only for status polling
-    # and signal delivery.  The agent does NOT run the job; the OS does.
-    process: subprocess.Popen  # type: ignore[type-arg]
+    # Either a subprocess.Popen (freshly started) or a _ReattachedProcess
+    # (recovered from running.json on startup).  The OS owns the actual
+    # process — this handle is only for status polling and signal delivery.
+    process: subprocess.Popen | _ReattachedProcess  # type: ignore[type-arg]
     log_path: Path
     started_at: datetime
     status: JobStatus = field(default=JobStatus.running)
@@ -125,6 +161,7 @@ class ProcessManager:
         with self._lock:
             self._jobs[job_uuid] = record
 
+        self.save_state()
         return _to_response(record)
 
     def kill(self, job_uuid: str) -> JobStatusResponse:
@@ -150,6 +187,7 @@ class ProcessManager:
         record.status = JobStatus.killed
         record.ended_at = datetime.now(UTC)
         record.exit_code = record.process.returncode
+        self.save_state()
         return _to_response(record)
 
     def get_status(self, job_uuid: str) -> JobStatusResponse:
@@ -186,6 +224,73 @@ class ProcessManager:
         """
         return self._get_record(job_uuid).log_path
 
+    def save_state(self) -> None:
+        """Write all currently-running jobs to ``running.json``.
+
+        Only jobs in ``running`` status are persisted; completed, failed, and
+        killed jobs are excluded so the file always reflects live processes.
+        """
+        with self._lock:
+            entries = {
+                uuid: JobEntry(
+                    script_name=r.script_name,
+                    pid=r.process.pid,
+                    log_path=r.log_path,
+                    started_at=r.started_at,
+                )
+                for uuid, r in self._jobs.items()
+                if r.status == JobStatus.running
+            }
+        save_running_state(self._paths.state_path, entries)
+
+    def restore_state(self) -> None:
+        """Read ``running.json`` and reattach any processes whose PIDs are alive.
+
+        For each entry in the saved state:
+        - If the PID is still alive: a ``_ReattachedProcess`` is created and
+          the job is added to the tracking dict with ``running`` status.
+        - If the PID is gone: the entry is silently discarded (the job ended
+          while the agent was down).
+
+        This method is called once during agent startup, before any requests
+        are accepted, so no locking is required.
+        """
+        entries = load_running_state(self._paths.state_path)
+        if not entries:
+            return
+
+        recovered = 0
+        for job_uuid, entry in entries.items():
+            if _pid_alive(entry.pid):
+                record = _ProcessRecord(
+                    job_uuid=job_uuid,
+                    script_name=entry.script_name,
+                    process=_ReattachedProcess(entry.pid),
+                    log_path=entry.log_path,
+                    started_at=entry.started_at,
+                )
+                self._jobs[job_uuid] = record
+                recovered += 1
+                logger.info(
+                    "reattached job=%s script=%s pid=%d",
+                    job_uuid,
+                    entry.script_name,
+                    entry.pid,
+                )
+            else:
+                logger.info(
+                    "job=%s script=%s pid=%d exited while agent was down",
+                    job_uuid,
+                    entry.script_name,
+                    entry.pid,
+                )
+
+        logger.info(
+            "state restore: %d reattached, %d terminated while down",
+            recovered,
+            len(entries) - recovered,
+        )
+
     def _get_record(self, job_uuid: str) -> _ProcessRecord:
         with self._lock:
             record = self._jobs.get(job_uuid)
@@ -197,6 +302,58 @@ class ProcessManager:
 # ---------------------------------------------------------------------------
 # Platform helpers (module-level so tests can patch them)
 # ---------------------------------------------------------------------------
+
+
+def _pid_alive(pid: int) -> bool:
+    """Return ``True`` if a process with *pid* is currently alive (not zombie).
+
+    On POSIX, ``os.kill(pid, 0)`` checks existence without delivering a signal.
+    On Windows, ``os.kill(pid, 0)`` would call ``TerminateProcess`` — which
+    kills the process — so we use ``OpenProcess`` with a read-only access mask
+    and ``GetExitCodeProcess`` instead.
+
+    Zombie processes on Linux pass the ``os.kill(pid, 0)`` check (they remain
+    in the process table until reaped) but are functionally dead.  We detect
+    them via ``/proc/{pid}/status`` and report them as not alive.  On platforms
+    without ``/proc`` (macOS, BSD), zombies are rare in real deployments because
+    init/systemd reaps them immediately, so we accept the minor imprecision.
+    """
+    if IS_WINDOWS:
+        import ctypes
+        import ctypes.wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            return False
+        try:
+            code = ctypes.wintypes.DWORD()
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))  # type: ignore[attr-defined]
+            return code.value == STILL_ACTIVE
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+    else:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # Process exists but we lack permission to signal it (different UID).
+            return True
+
+        # Exclude zombie processes — they pass os.kill(pid, 0) but are dead.
+        try:
+            status_text = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+            for line in status_text.splitlines():
+                if line.startswith("State:"):
+                    return "\tZ" not in line
+        except OSError:
+            pass  # /proc not available (macOS/BSD) — accept os.kill result
+
+        return True
 
 
 def _popen(command: list[str], env: dict[str, str], log_file: object) -> subprocess.Popen:  # type: ignore[type-arg]
@@ -218,7 +375,7 @@ def _popen(command: list[str], env: dict[str, str], log_file: object) -> subproc
     return subprocess.Popen(command, **kwargs)
 
 
-def _kill_process(proc: subprocess.Popen) -> None:  # type: ignore[type-arg]
+def _kill_process(proc: subprocess.Popen | _ReattachedProcess) -> None:  # type: ignore[type-arg]
     """Kill *proc* and its entire process group/tree, blocking until dead.
 
     POSIX: SIGTERM → wait ``_SIGTERM_GRACE_SECONDS`` → SIGKILL if still alive.
