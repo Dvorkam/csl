@@ -1,0 +1,478 @@
+"""Tests for agent/process_manager.py.
+
+Structure:
+  TestApprovalEnforcement     — cross-platform: approval gate before any execution
+  TestJobNotFound             — cross-platform: unknown job_uuid raises JobNotFoundError
+  TestStart                   — linux_only: process launches, log file created
+  TestStatus                  — linux_only: status transitions (running→completed/failed/killed)
+  TestKill                    — linux_only: kill cleans up child processes; SIGKILL fallback
+  TestListJobs                — linux_only: list_jobs reflects all tracked processes
+  TestRunningCount            — linux_only: running_count tracks live processes
+  TestWindowsStart            — windows_only: process launches on Windows via PowerShell
+  TestWindowsStatus           — windows_only: status transitions on Windows
+  TestWindowsKill             — windows_only: taskkill terminates the process tree
+  TestWindowsListJobs         — windows_only: list_jobs reflects all tracked processes
+  TestWindowsRunningCount     — windows_only: running_count tracks live processes
+"""
+
+import hashlib
+import time
+import uuid
+from pathlib import Path
+
+import pytest
+
+from control_station_lite.agent.approvals import ApprovalsManager
+from control_station_lite.agent.paths import CslPaths
+from control_station_lite.agent.process_manager import (
+    JobNotFoundError,
+    ProcessManager,
+    ScriptNotApprovedError,
+)
+from control_station_lite.shared.models import JobStatus
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def paths(tmp_path: Path) -> CslPaths:
+    return CslPaths(
+        scripts_dir=tmp_path / "scripts",
+        pending_dir=tmp_path / "scripts.pending",
+        logs_dir=tmp_path / "logs",
+        approvals_path=tmp_path / "agent" / "approvals.json",
+        state_path=tmp_path / "agent" / "running.json",
+    )
+
+
+@pytest.fixture
+def approvals(paths: CslPaths) -> ApprovalsManager:
+    return ApprovalsManager(paths)
+
+
+@pytest.fixture
+def manager(paths: CslPaths, approvals: ApprovalsManager) -> ProcessManager:
+    return ProcessManager(paths, approvals)
+
+
+def _approve_script(
+    mgr: ApprovalsManager,
+    paths: CslPaths,
+    name: str,
+    content: str,
+    extension: str = ".sh",
+) -> None:
+    """Stage, approve, and write script *name* with platform extension."""
+    md5 = hashlib.md5(content.encode()).hexdigest()
+    mgr.stage(name, content, md5)
+    mgr.approve(name)
+    approved = paths.scripts_dir / name
+    if approved.exists() and extension:
+        approved.rename(paths.scripts_dir / f"{name}{extension}")
+
+
+def _new_uuid() -> str:
+    return str(uuid.uuid4())
+
+
+# ---------------------------------------------------------------------------
+# TestApprovalEnforcement — cross-platform
+# ---------------------------------------------------------------------------
+
+
+class TestApprovalEnforcement:
+    def test_absent_raises(self, manager: ProcessManager) -> None:
+        with pytest.raises(ScriptNotApprovedError, match="absent"):
+            manager.start("sleep_machine", {}, _new_uuid())
+
+    def test_pending_raises(self, approvals: ApprovalsManager, manager: ProcessManager) -> None:
+        md5 = hashlib.md5(b"content").hexdigest()
+        approvals.stage("script", "content", md5)
+        with pytest.raises(ScriptNotApprovedError, match="pending"):
+            manager.start("script", {}, _new_uuid())
+
+    def test_rejected_raises(self, approvals: ApprovalsManager, manager: ProcessManager) -> None:
+        md5 = hashlib.md5(b"content").hexdigest()
+        approvals.stage("script", "content", md5)
+        approvals.reject("script")
+        with pytest.raises(ScriptNotApprovedError, match="rejected"):
+            manager.start("script", {}, _new_uuid())
+
+    def test_update_pending_raises(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "script", "v1")
+        md5_v2 = hashlib.md5(b"v2").hexdigest()
+        approvals.stage("script", "v2", md5_v2)
+        with pytest.raises(ScriptNotApprovedError, match="update_pending"):
+            manager.start("script", {}, _new_uuid())
+
+
+# ---------------------------------------------------------------------------
+# TestJobNotFound — cross-platform
+# ---------------------------------------------------------------------------
+
+
+class TestJobNotFound:
+    def test_get_status_unknown_uuid(self, manager: ProcessManager) -> None:
+        with pytest.raises(JobNotFoundError):
+            manager.get_status("nonexistent-uuid")
+
+    def test_kill_unknown_uuid(self, manager: ProcessManager) -> None:
+        with pytest.raises(JobNotFoundError):
+            manager.kill("nonexistent-uuid")
+
+
+# ---------------------------------------------------------------------------
+# TestStart — linux_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.linux_only
+class TestStart:
+    def test_log_file_created(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "noop", "#!/bin/bash\nsleep 0.1\n")
+        job_uuid = _new_uuid()
+        manager.start("noop", {}, job_uuid)
+        assert (paths.logs_dir / f"{job_uuid}.log").exists()
+
+    def test_returns_running_status(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "noop", "#!/bin/bash\nsleep 0.5\n")
+        job_uuid = _new_uuid()
+        resp = manager.start("noop", {}, job_uuid)
+        assert resp.status == JobStatus.running
+        assert resp.persistent is True
+        assert resp.job_uuid == job_uuid
+        assert resp.script_name == "noop"
+
+    def test_params_passed_via_env(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        script = "#!/bin/bash\necho $CSL_PARAM_MESSAGE\n"
+        _approve_script(approvals, paths, "echo_param", script)
+        job_uuid = _new_uuid()
+        manager.start("echo_param", {"message": "hello"}, job_uuid)
+        time.sleep(0.3)
+        log_path = paths.logs_dir / f"{job_uuid}.log"
+        assert "hello" in log_path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# TestStatus — linux_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.linux_only
+class TestStatus:
+    def test_running_then_completed(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "#!/bin/bash\nsleep 0.1\n")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(0.5)
+        resp = manager.get_status(job_uuid)
+        assert resp.status == JobStatus.completed
+        assert resp.exit_code == 0
+        assert resp.ended_at is not None
+
+    def test_failed_exit_code(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "fails", "#!/bin/bash\nexit 42\n")
+        job_uuid = _new_uuid()
+        manager.start("fails", {}, job_uuid)
+        time.sleep(0.3)
+        resp = manager.get_status(job_uuid)
+        assert resp.status == JobStatus.failed
+        assert resp.exit_code == 42
+
+
+# ---------------------------------------------------------------------------
+# TestKill — linux_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.linux_only
+class TestKill:
+    def test_kill_running_process(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "#!/bin/bash\nsleep 60\n")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.1)
+        resp = manager.kill(job_uuid)
+        assert resp.status == JobStatus.killed
+        assert resp.ended_at is not None
+
+    def test_kill_already_finished_returns_final_status(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "#!/bin/bash\nsleep 0.05\n")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(0.5)
+        resp = manager.kill(job_uuid)
+        assert resp.status == JobStatus.completed
+
+    def test_kill_cleans_up_child_processes(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        """Kill must terminate child processes, not just the shell."""
+        script = "#!/bin/bash\n(sleep 60) &\nwait\n"
+        _approve_script(approvals, paths, "parent_child", script)
+        job_uuid = _new_uuid()
+        manager.start("parent_child", {}, job_uuid)
+        time.sleep(0.2)
+        resp = manager.kill(job_uuid)
+        assert resp.status == JobStatus.killed
+
+    def test_sigkill_fallback_terminates_sigterm_ignorer(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        """A process that traps SIGTERM must still be killed via SIGKILL escalation."""
+        script = "#!/bin/bash\ntrap '' SIGTERM\nsleep 60\n"
+        _approve_script(approvals, paths, "sigterm_ignorer", script)
+        job_uuid = _new_uuid()
+        manager.start("sigterm_ignorer", {}, job_uuid)
+        time.sleep(0.2)
+        resp = manager.kill(job_uuid)
+        assert resp.status == JobStatus.killed
+
+
+# ---------------------------------------------------------------------------
+# TestListJobs — linux_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.linux_only
+class TestListJobs:
+    def test_empty_initially(self, manager: ProcessManager) -> None:
+        assert manager.list_jobs() == []
+
+    def test_lists_started_jobs(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "#!/bin/bash\nsleep 60\n")
+        uuid_a = _new_uuid()
+        uuid_b = _new_uuid()
+        manager.start("sleeper", {}, uuid_a)
+        manager.start("sleeper", {}, uuid_b)
+        jobs = manager.list_jobs()
+        uuids = {j.job_uuid for j in jobs}
+        assert {uuid_a, uuid_b}.issubset(uuids)
+
+    def test_completed_jobs_remain_in_list(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "#!/bin/bash\nsleep 0.05\n")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(0.3)
+        jobs = manager.list_jobs()
+        found = next((j for j in jobs if j.job_uuid == job_uuid), None)
+        assert found is not None
+        assert found.status == JobStatus.completed
+
+
+# ---------------------------------------------------------------------------
+# TestRunningCount — linux_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.linux_only
+class TestRunningCount:
+    def test_zero_with_no_jobs(self, manager: ProcessManager) -> None:
+        assert manager.running_count() == 0
+
+    def test_increments_on_start(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "#!/bin/bash\nsleep 60\n")
+        manager.start("sleeper", {}, _new_uuid())
+        assert manager.running_count() == 1
+
+    def test_decrements_on_completion(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "#!/bin/bash\nsleep 0.05\n")
+        manager.start("quick", {}, _new_uuid())
+        time.sleep(0.4)
+        assert manager.running_count() == 0
+
+
+# ---------------------------------------------------------------------------
+# TestWindowsStart — windows_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.windows_only
+class TestWindowsStart:
+    def test_log_file_created(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "noop", "Start-Sleep -Milliseconds 200\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("noop", {}, job_uuid)
+        assert (paths.logs_dir / f"{job_uuid}.log").exists()
+
+    def test_returns_running_status(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "noop", "Start-Sleep -Seconds 5\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        resp = manager.start("noop", {}, job_uuid)
+        assert resp.status == JobStatus.running
+        assert resp.persistent is True
+        assert resp.job_uuid == job_uuid
+
+    def test_params_passed_via_env(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        script = "Write-Output $env:CSL_PARAM_MESSAGE\r\n"
+        _approve_script(approvals, paths, "echo_param", script, ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("echo_param", {"message": "hello"}, job_uuid)
+        time.sleep(1.0)
+        log_path = paths.logs_dir / f"{job_uuid}.log"
+        assert "hello" in log_path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# TestWindowsStatus — windows_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.windows_only
+class TestWindowsStatus:
+    def test_running_then_completed(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "Start-Sleep -Milliseconds 200\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(2.0)
+        resp = manager.get_status(job_uuid)
+        assert resp.status == JobStatus.completed
+        assert resp.exit_code == 0
+        assert resp.ended_at is not None
+
+    def test_failed_exit_code(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "fails", "exit 42\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("fails", {}, job_uuid)
+        time.sleep(2.0)
+        resp = manager.get_status(job_uuid)
+        assert resp.status == JobStatus.failed
+        assert resp.exit_code == 42
+
+
+# ---------------------------------------------------------------------------
+# TestWindowsKill — windows_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.windows_only
+class TestWindowsKill:
+    def test_kill_running_process(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "Start-Sleep -Seconds 60\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("sleeper", {}, job_uuid)
+        time.sleep(0.5)
+        resp = manager.kill(job_uuid)
+        assert resp.status == JobStatus.killed
+        assert resp.ended_at is not None
+
+    def test_kill_already_finished_returns_final_status(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "Start-Sleep -Milliseconds 100\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(2.0)
+        resp = manager.kill(job_uuid)
+        assert resp.status == JobStatus.completed
+
+    def test_kill_terminates_child_processes(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        """taskkill /F /T must terminate the entire process tree."""
+        script = "Start-Job { Start-Sleep 60 } | Out-Null; Start-Sleep 60\r\n"
+        _approve_script(approvals, paths, "parent_child", script, ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("parent_child", {}, job_uuid)
+        time.sleep(0.5)
+        resp = manager.kill(job_uuid)
+        assert resp.status == JobStatus.killed
+
+
+# ---------------------------------------------------------------------------
+# TestWindowsListJobs — windows_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.windows_only
+class TestWindowsListJobs:
+    def test_empty_initially(self, manager: ProcessManager) -> None:
+        assert manager.list_jobs() == []
+
+    def test_lists_started_jobs(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "Start-Sleep -Seconds 60\r\n", ".ps1")
+        uuid_a = _new_uuid()
+        uuid_b = _new_uuid()
+        manager.start("sleeper", {}, uuid_a)
+        manager.start("sleeper", {}, uuid_b)
+        jobs = manager.list_jobs()
+        uuids = {j.job_uuid for j in jobs}
+        assert {uuid_a, uuid_b}.issubset(uuids)
+
+    def test_completed_jobs_remain_in_list(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "Start-Sleep -Milliseconds 200\r\n", ".ps1")
+        job_uuid = _new_uuid()
+        manager.start("quick", {}, job_uuid)
+        time.sleep(2.0)
+        jobs = manager.list_jobs()
+        found = next((j for j in jobs if j.job_uuid == job_uuid), None)
+        assert found is not None
+        assert found.status == JobStatus.completed
+
+
+# ---------------------------------------------------------------------------
+# TestWindowsRunningCount — windows_only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.windows_only
+class TestWindowsRunningCount:
+    def test_zero_with_no_jobs(self, manager: ProcessManager) -> None:
+        assert manager.running_count() == 0
+
+    def test_increments_on_start(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "sleeper", "Start-Sleep -Seconds 60\r\n", ".ps1")
+        manager.start("sleeper", {}, _new_uuid())
+        assert manager.running_count() == 1
+
+    def test_decrements_on_completion(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "quick", "Start-Sleep -Milliseconds 200\r\n", ".ps1")
+        manager.start("quick", {}, _new_uuid())
+        time.sleep(2.0)
+        assert manager.running_count() == 0
