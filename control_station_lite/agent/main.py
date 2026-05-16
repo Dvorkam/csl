@@ -185,7 +185,25 @@ async def stream_job_logs(
 
 def main() -> None:
     """Entry point for the csl-agent server process."""
+    import logging
+    import sys
+
     import uvicorn
+
+    # Uvicorn's default log formatter calls sys.stdout.isatty() to detect
+    # colour support.  Under pythonw.exe (Task Scheduler, no console) both
+    # sys.stdout and sys.stderr are None, which causes an AttributeError
+    # before the server even starts.  We configure logging ourselves and
+    # pass log_config=None so uvicorn skips its dictConfig entirely.
+    if sys.stderr is not None:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        )
+    else:
+        # Headless — discard global agent logs for now; per-job output goes
+        # to individual log files under ~/.csl/logs/.
+        logging.basicConfig(handlers=[logging.NullHandler()])
 
     cfg: AgentConfig = load_config()
     uvicorn.run(
@@ -193,4 +211,5 @@ def main() -> None:
         host=_AGENT_HOST,
         port=cfg.agent.listen_port,
         log_level="info",
+        log_config=None,
     )

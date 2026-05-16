@@ -20,6 +20,20 @@ The agent self-terminates when idle. Tests that start a real agent process must 
 the lifecycle background task or set `idle_timeout_seconds` to a very high value, otherwise the
 agent exits mid-test.
 
+## Windows — pythonw.exe has no stdout/stderr
+
+When the agent runs under `pythonw.exe` (as started by Task Scheduler), `sys.stdout`
+and `sys.stderr` are both `None`.  Uvicorn's default colour log formatter calls
+`sys.stdout.isatty()` during startup and raises `AttributeError: 'NoneType' object has
+no attribute 'isatty'`, preventing the server from starting.
+
+Fix: in `agent/main.py`, check `sys.stderr is not None` before calling `logging.basicConfig`,
+and pass `log_config=None` to `uvicorn.run()` so uvicorn skips its `dictConfig` entirely.
+Any uvicorn log calls then flow through the root logger configured by `basicConfig`.
+
+The same pattern applies to any library that touches stdout/stderr during import or
+initialisation — guard with `if sys.stdout is not None` before any console interaction.
+
 ## Windows — process group kill
 
 Killing a persistent process on Windows uses `CREATE_NEW_PROCESS_GROUP` (0x200) at spawn time
