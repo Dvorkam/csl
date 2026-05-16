@@ -19,6 +19,15 @@ Tasks live in `docs/TASKS.md` and are numbered (e.g. `1.5`). For each task:
 
 One task = one commit by default. Split only if the task has clearly separable steps.
 
+After each task (or logical group), open a PR:
+
+```
+gh pr create --base main --title "..." --body "..."
+```
+
+**Always target `main`** unless the user explicitly names a different base branch.
+The project used a temporary feature branch as base during bootstrapping; that is over.
+
 ---
 
 ## Testing rules

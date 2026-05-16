@@ -8,9 +8,36 @@ agent exits mid-test.
 
 ## Windows — process group kill
 
-Killing a persistent process on Windows must use `CREATE_NEW_PROCESS_GROUP` at spawn time and
-`os.kill(pid, signal.CTRL_BREAK_EVENT)` to kill. The Unix path uses `os.killpg`. Both paths live
-in `agent/process_manager.py`.
+Killing a persistent process on Windows uses `CREATE_NEW_PROCESS_GROUP` (0x200) at spawn time
+and `taskkill /F /T /PID <pid>` to kill the whole tree. The POSIX path uses `os.killpg` with
+SIGTERM → SIGKILL escalation. Both paths live in `agent/process_manager.py`.
+
+## Windows — `os.kill(pid, 0)` terminates the process
+
+On POSIX, `os.kill(pid, 0)` checks process existence without delivering a signal. On Windows,
+the Python implementation calls `TerminateProcess`, so **`os.kill(pid, 0)` kills the process on
+Windows**. To check PID existence on Windows, use `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)`
++ `GetExitCodeProcess` via ctypes and compare the result to `STILL_ACTIVE` (259). See
+`_pid_alive()` in `process_manager.py`.
+
+## POSIX zombies and `os.kill(pid, 0)`
+
+`os.kill(pid, 0)` returns success for zombie processes (exited but not yet reaped). A
+`_pid_alive`-style check must also verify the process is not a zombie via
+`/proc/{pid}/status` (look for `State:\tZ`). In production this rarely matters because
+init/systemd reaps orphaned children immediately; in tests where the test runner is the
+parent it is a real hang risk — `_ReattachedProcess.wait()` will spin forever on a zombie.
+
+## `sys.platform` vs `IS_WINDOWS` for mypy type narrowing
+
+mypy specifically recognises `if sys.platform == "win32":` and narrows platform stubs accordingly:
+`ctypes.windll` is valid only in the `win32` branch; `os.getpgid`, `os.killpg`, and
+`signal.SIGKILL` are valid only in the `else` branch. A custom `IS_WINDOWS` constant does not
+trigger this narrowing.
+
+Rule: in any function that has a POSIX branch and a Windows branch **with different stubs**, use
+`sys.platform == "win32"` as the guard. Use `IS_WINDOWS` everywhere else (runtime-only checks
+where mypy doesn't need to narrow).
 
 ## Windows — SSH stdio
 
