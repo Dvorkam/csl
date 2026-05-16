@@ -15,6 +15,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -318,23 +319,23 @@ def _pid_alive(pid: int) -> bool:
     without ``/proc`` (macOS, BSD), zombies are rare in real deployments because
     init/systemd reaps them immediately, so we accept the minor imprecision.
     """
-    if IS_WINDOWS:
+    # sys.platform used here (not IS_WINDOWS) so mypy can narrow platform stubs:
+    # ctypes.windll only exists in Windows stubs; os.getpgid/killpg only in POSIX.
+    if sys.platform == "win32":
         import ctypes
         import ctypes.wintypes
 
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         STILL_ACTIVE = 259
-        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
-            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
-        )
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
             return False
         try:
             code = ctypes.wintypes.DWORD()
-            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))  # type: ignore[attr-defined]
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
             return code.value == STILL_ACTIVE
         finally:
-            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+            ctypes.windll.kernel32.CloseHandle(handle)
     else:
         try:
             os.kill(pid, 0)
@@ -381,7 +382,8 @@ def _kill_process(proc: subprocess.Popen | _ReattachedProcess) -> None:  # type:
     POSIX: SIGTERM → wait ``_SIGTERM_GRACE_SECONDS`` → SIGKILL if still alive.
     Windows: ``taskkill /F /T`` is unconditional (TerminateProcess); one step.
     """
-    if IS_WINDOWS:
+    # sys.platform used here (not IS_WINDOWS) so mypy can narrow platform stubs.
+    if sys.platform == "win32":
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
             check=False,
