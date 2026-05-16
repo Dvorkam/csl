@@ -1,5 +1,19 @@
 # Known gotchas
 
+## Editable install required for service testing in dev
+
+`uv sync` does NOT install `control_station_lite` into site-packages — it only sets up the
+project path for `uv run`. When systemd (or any process) invokes the venv Python directly, the
+package is not importable and the service fails with `ModuleNotFoundError: No module named
+'control_station_lite'`.
+
+Fix: run `uv pip install -e .` once after cloning or after adding `deploy/` or other top-level
+directories. This creates a `.pth` file in site-packages so the package is importable from any
+working directory.
+
+In production this is a non-issue: `pip install control-station-lite[agent]` installs the
+package normally.
+
 ## Agent lifecycle
 
 The agent self-terminates when idle. Tests that start a real agent process must either disable
