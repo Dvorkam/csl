@@ -6,7 +6,11 @@
       "Bash(mkdir -p /home/dvorkam/repos/csl/docs/agent_ref)",
       "Bash(echo \"exit code: $?\")",
       "Bash(uv sync *)",
-      "Bash(python -c \"import schemathesis; print\\(dir\\(schemathesis\\)\\)\")"
+      "Bash(python -c \"import schemathesis; print\\(dir\\(schemathesis\\)\\)\")",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "Bash(git push *)",
+      "Bash(python tests/manual/linux/check_authorized_keys.py)"
     ],
     "additionalDirectories": [
       "/home/dvorkam/repos/csl/docs"

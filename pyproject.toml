@@ -5,6 +5,7 @@ description = "A lightweight self-hosted web service for controlling LAN machine
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "cryptography>=42.0.0",
     "fastapi>=0.136.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
@@ -17,7 +18,6 @@ server = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
     "asyncssh>=2.23.0",
-    "cryptography>=48.0.0",
     "jinja2>=3.1.6",
     "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.5.0",
@@ -95,6 +95,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+norecursedirs = ["tests/manual"]
 addopts = "--cov=control_station_lite --cov-report=term-missing"
 markers = [
     "linux_only: test runs on Linux only — skipped on other platforms",
