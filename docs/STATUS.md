@@ -7,20 +7,18 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 1.10** — `agent/lifecycle.py`  
-Background task counts idle seconds; triggers shutdown when `running_persistent == 0`
-and `idle > timeout`.  
-Branch: `feature/task-1.10-lifecycle`
+**Task 1.11** — `agent/service_installer.py`  
+Install user-level service on Linux (systemd --user), Windows (Task Scheduler), macOS (launchd).
 
 ## Up next
 
-**Task 1.11** — `agent/service_installer.py`  
-Install user-level service on Linux (systemd --user), Windows (Task Scheduler), macOS (launchd).
+**Task 1.12** — `agent/cli.py` and `csl-agent init` command.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 1.10 | `agent/lifecycle.py`: `IdleTracker` (thread-safe idle clock, `record_activity`, `idle_seconds`, `shutdown_due`); `run_loop` async background task; `_HasRunningCount` Protocol to avoid circular import; `_ActivityMiddleware` in `main.py` resets clock on every request; `/healthz` now reports real `idle_seconds`; `asyncio.create_task` in lifespan with clean cancel on shutdown; 14 unit + integration tests | `feature/task-1.10-lifecycle` |
 | 1.9 | `agent/state.py`: `JobEntry` Pydantic model; atomic `save_running_state` / `load_running_state`; `ProcessManager.save_state()` + `restore_state()`; `_ReattachedProcess` (Popen duck-type for recovered PIDs); `_pid_alive()` cross-platform (ctypes on Windows); lifespan calls restore; 27 new tests | `feature/task-1.9-state` |
 | 1.8 | `agent/log_stream.py`: `tail_log` async generator with drain-on-exit; `sse_events` SSE envelope; `make_sse_response`; `GET /jobs/{uuid}/stream` endpoint; managers wired in lifespan; 18 unit tests | `feature/task-1.8-log-stream` |
 | 1.7 | `agent/process_manager.py` + `agent/paths.py` (`CslPaths`): approval-gated persistent process start; SIGTERM→SIGKILL kill; `running_count()`; `CslPaths` centralises all agent paths with `platform_base()` cached; helpers made public in `script_runner.py`; 204 tests | `feature/task-1.7-process-manager` |

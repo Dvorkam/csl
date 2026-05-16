@@ -187,9 +187,18 @@ The agent is ephemeral:
 - Started on demand by the control station via the platform-appropriate one-shot service-start command.
 - Listens on `127.0.0.1` only. Port number stored in the target's agent config.
 - Tracks two counters: number of running persistent jobs, and seconds since last client request.
-- Self-terminates when: `running_persistent_jobs == 0` AND `idle_seconds > idle_timeout` (default 300s).
+- Self-terminates when: `running_persistent_jobs == 0` AND `idle_seconds > idle_timeout` (default 600s).
 - On exit, the OS marks the service inactive but does not restart it (unit configured `Restart=no`; task triggers are demand-only).
 - Re-spawnable at any time via the same start command. On startup, reads `running.json` to recover knowledge of persistent processes that may have outlived a previous agent instance.
+
+**Keep-alive heartbeat (server responsibility):**
+
+The idle clock resets on every HTTP request to the agent (any endpoint). The control station exploits this to keep the agent alive while a user is actively using the UI:
+
+- When a user opens a machine detail page, the server-side UI begins polling `GET /healthz` through the SSH tunnel at approximately 30-second intervals. Each poll resets the agent's idle clock.
+- Polling stops when the browser tab is closed or navigated away from, or after a configurable period of browser inactivity (default 10 minutes — matching `idle_timeout_seconds`).
+- When a machine page is not open, the agent idles normally and self-terminates after `idle_timeout_seconds` of no requests. This means brief gaps between one-off script executions (< 10 min) do not spin the agent down; longer periods of inactivity do.
+- There is no dedicated heartbeat endpoint — `/healthz` serves the dual purpose of status check and keep-alive. No agent-side changes are required; the heartbeat is purely a server/frontend concern implemented in Phase 2 (`server/core/agent_client.py` and the machine detail page HTMX polling).
 
 Note: an agent restart while persistent jobs are running is recoverable for *tracking* but not for *log streaming*. Logs are written to disk by the agent; in-flight SSE subscribers will disconnect and need to reconnect, at which point streaming resumes from the current log file tail.
 
@@ -451,7 +460,7 @@ control_station_lite/
 ```yaml
 agent:
   listen_port: 47731
-  idle_timeout_seconds: 300
+  idle_timeout_seconds: 600  # 10 minutes; override to tune spin-down behaviour
   scripts_dir: ~/.csl/scripts
   pending_dir: ~/.csl/scripts.pending
   logs_dir: ~/.csl/logs

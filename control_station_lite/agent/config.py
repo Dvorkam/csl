@@ -45,7 +45,7 @@ class AgentSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     listen_port: int = 47731
-    idle_timeout_seconds: int = 300
+    idle_timeout_seconds: int = 600
     # csl_dir is the single root for all agent data.  Override it to relocate
     # everything at once; override individual paths for finer control.
     csl_dir: Path = Field(default_factory=CslPaths.platform_base)
