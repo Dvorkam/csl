@@ -25,6 +25,9 @@ __all__ = [
     "ScriptNotApprovedError",
     "ScriptNotFoundError",
     "ScriptResult",
+    "build_command",
+    "build_env",
+    "find_script",
     "run_script",
 ]
 
@@ -71,9 +74,9 @@ def run_script(
             f"refusing to run '{name}': approval state is '{descriptor.state}' (must be approved)"
         )
 
-    script_path = _find_script(name, scripts_dir)
-    command = _build_command(script_path)
-    env = _build_env(params)
+    script_path = find_script(name, scripts_dir)
+    command = build_command(script_path)
+    env = build_env(params)
 
     logger.info("running script '%s' via %s", name, command[0])
 
@@ -105,7 +108,7 @@ def run_script(
 # ---------------------------------------------------------------------------
 
 
-def _find_script(name: str, scripts_dir: Path) -> Path:
+def find_script(name: str, scripts_dir: Path) -> Path:
     """Locate the script file for *name*, trying platform-appropriate extensions."""
     extensions = _WINDOWS_EXTENSIONS if IS_WINDOWS else _LINUX_EXTENSIONS
     for ext in extensions:
@@ -117,7 +120,7 @@ def _find_script(name: str, scripts_dir: Path) -> Path:
     )
 
 
-def _build_command(script_path: Path) -> list[str]:
+def build_command(script_path: Path) -> list[str]:
     """Return the shell command list to execute *script_path*."""
     suffix = script_path.suffix.lower()
     if suffix in (".sh", ".bash"):
@@ -146,7 +149,7 @@ def _build_command(script_path: Path) -> list[str]:
     return ["bash", str(script_path)]
 
 
-def _build_env(params: dict[str, str | int | float | bool]) -> dict[str, str]:
+def build_env(params: dict[str, str | int | float | bool]) -> dict[str, str]:
     """Build an env dict with current environment plus ``CSL_PARAM_*`` entries."""
     env = os.environ.copy()
     for key, value in params.items():

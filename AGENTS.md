@@ -17,6 +17,12 @@ approval-gated agent. Key docs:
 | `docs/agent_ref/gotchas.md` | Platform pitfalls (Windows process groups, SSH, SQLite, first-PR) |
 | `docs/agent_ref/decided.md` | Locked architectural decisions |
 
+## How to maintain the agent_ref docs
+
+**Keep each file to its purpose and stay brief.** If a rule needs more than two lines to explain,
+the explanation belongs in `gotchas.md` (or a new dedicated file), with a one-line pointer from
+wherever the rule is stated. `conventions.md` is a quick-reference, not a tutorial.
+
 ---
 
 ## Stack

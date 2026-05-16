@@ -15,11 +15,11 @@ import json
 import logging
 import threading
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from control_station_lite.agent.paths import CslPaths
 from control_station_lite.shared.models import ApprovalState, ScriptDescriptor
 
 __all__ = ["ApprovalError", "ApprovalsManager"]
@@ -81,15 +81,11 @@ class ApprovalsManager:
 
     def __init__(
         self,
-        approvals_path: Path,
-        scripts_dir: Path,
-        pending_dir: Path,
+        paths: CslPaths,
         *,
         auto_approve_list: list[str] | None = None,
     ) -> None:
-        self._approvals_path = approvals_path
-        self._scripts_dir = scripts_dir
-        self._pending_dir = pending_dir
+        self._paths = paths
         self._auto_approve = set(auto_approve_list or [])
         self._lock = threading.Lock()
         self._store = self._load()
@@ -149,21 +145,23 @@ class ApprovalsManager:
                     return current
 
             # Write content to pending dir.
-            self._pending_dir.mkdir(parents=True, exist_ok=True)
-            (self._pending_dir / name).write_text(content, encoding="utf-8")
+            self._paths.pending_dir.mkdir(parents=True, exist_ok=True)
+            (self._paths.pending_dir / name).write_text(content, encoding="utf-8")
             if meta_yaml is not None:
-                (self._pending_dir / f"{name}.meta.yaml").write_text(meta_yaml, encoding="utf-8")
+                (self._paths.pending_dir / f"{name}.meta.yaml").write_text(
+                    meta_yaml, encoding="utf-8"
+                )
 
             auto = name in self._auto_approve
             now = datetime.now(UTC)
 
             if auto:
                 # Promote directly to approved — bypass manual review.
-                self._scripts_dir.mkdir(parents=True, exist_ok=True)
-                (self._pending_dir / name).replace(self._scripts_dir / name)
-                meta_src = self._pending_dir / f"{name}.meta.yaml"
+                self._paths.scripts_dir.mkdir(parents=True, exist_ok=True)
+                (self._paths.pending_dir / name).replace(self._paths.scripts_dir / name)
+                meta_src = self._paths.pending_dir / f"{name}.meta.yaml"
                 if meta_src.exists():
-                    meta_src.replace(self._scripts_dir / f"{name}.meta.yaml")
+                    meta_src.replace(self._paths.scripts_dir / f"{name}.meta.yaml")
 
                 new_record = _ScriptRecord(
                     state=ApprovalState.approved,
@@ -208,15 +206,15 @@ class ApprovalsManager:
                     f" (expected pending or update_pending)"
                 )
 
-            pending_file = self._pending_dir / name
+            pending_file = self._paths.pending_dir / name
             if not pending_file.exists():
                 raise ApprovalError(f"pending file for '{name}' not found at {pending_file}")
 
-            self._scripts_dir.mkdir(parents=True, exist_ok=True)
-            pending_file.replace(self._scripts_dir / name)
-            meta = self._pending_dir / f"{name}.meta.yaml"
+            self._paths.scripts_dir.mkdir(parents=True, exist_ok=True)
+            pending_file.replace(self._paths.scripts_dir / name)
+            meta = self._paths.pending_dir / f"{name}.meta.yaml"
             if meta.exists():
-                meta.replace(self._scripts_dir / f"{name}.meta.yaml")
+                meta.replace(self._paths.scripts_dir / f"{name}.meta.yaml")
 
             self._store.scripts[name] = _ScriptRecord(
                 state=ApprovalState.approved,
@@ -287,7 +285,7 @@ class ApprovalsManager:
         )
 
     def _remove_files(self, name: str) -> None:
-        for directory in (self._scripts_dir, self._pending_dir):
+        for directory in (self._paths.scripts_dir, self._paths.pending_dir):
             for suffix in ("", ".meta.yaml"):
                 f = directory / f"{name}{suffix}"
                 if f.exists():
@@ -300,10 +298,10 @@ class ApprovalsManager:
     # to what state.py does for running.json) should detect and resolve such drift.
 
     def _load(self) -> _ApprovalsStore:
-        if not self._approvals_path.exists():
+        if not self._paths.approvals_path.exists():
             return _ApprovalsStore()
         try:
-            raw = json.loads(self._approvals_path.read_text(encoding="utf-8"))
+            raw = json.loads(self._paths.approvals_path.read_text(encoding="utf-8"))
             return _ApprovalsStore.model_validate(raw)
         except Exception as exc:
             logger.warning("could not load approvals.json, starting fresh: %s", exc)
@@ -311,13 +309,13 @@ class ApprovalsManager:
 
     def _save(self) -> None:
         """Atomic write: write to a temp file, then rename into place."""
-        self._approvals_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._approvals_path.with_suffix(".tmp")
+        self._paths.approvals_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._paths.approvals_path.with_suffix(".tmp")
         tmp.write_text(
             self._store.model_dump_json(indent=2, exclude_none=True),
             encoding="utf-8",
         )
-        tmp.replace(self._approvals_path)
+        tmp.replace(self._paths.approvals_path)
 
     def _audit(self, action: str, name: str, **details: object) -> None:
         parts = " ".join(f"{k}={v}" for k, v in details.items())

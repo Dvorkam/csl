@@ -12,14 +12,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from control_station_lite.agent.paths import CslPaths
 from control_station_lite.shared._validation import validate_stripping_unknowns
-from control_station_lite.shared.platform_info import IS_WINDOWS
 
 __all__ = [
     "AgentConfig",
@@ -38,16 +37,8 @@ class ConfigError(ValueError):
     """Raised when config.yaml cannot be parsed or fails validation."""
 
 
-def _csl_dir() -> Path:
-    """Return the platform-appropriate base directory for agent data."""
-    if IS_WINDOWS:
-        appdata = os.environ.get("APPDATA", "")
-        return Path(appdata) / "control-station-lite"
-    return Path.home() / ".csl"
-
-
 def default_config_path() -> Path:
-    return _csl_dir() / "config.yaml"
+    return CslPaths.platform_base() / "config.yaml"
 
 
 class AgentSection(BaseModel):
@@ -57,12 +48,16 @@ class AgentSection(BaseModel):
     idle_timeout_seconds: int = 300
     # csl_dir is the single root for all agent data.  Override it to relocate
     # everything at once; override individual paths for finer control.
-    csl_dir: Path = Field(default_factory=_csl_dir)
-    scripts_dir: Path = Field(default_factory=lambda: _csl_dir() / "scripts")
-    pending_dir: Path = Field(default_factory=lambda: _csl_dir() / "scripts.pending")
-    logs_dir: Path = Field(default_factory=lambda: _csl_dir() / "logs")
-    state_path: Path = Field(default_factory=lambda: _csl_dir() / "agent" / "running.json")
-    approvals_path: Path = Field(default_factory=lambda: _csl_dir() / "agent" / "approvals.json")
+    csl_dir: Path = Field(default_factory=CslPaths.platform_base)
+    scripts_dir: Path = Field(default_factory=lambda: CslPaths.platform_base() / "scripts")
+    pending_dir: Path = Field(default_factory=lambda: CslPaths.platform_base() / "scripts.pending")
+    logs_dir: Path = Field(default_factory=lambda: CslPaths.platform_base() / "logs")
+    state_path: Path = Field(
+        default_factory=lambda: CslPaths.platform_base() / "agent" / "running.json"
+    )
+    approvals_path: Path = Field(
+        default_factory=lambda: CslPaths.platform_base() / "agent" / "approvals.json"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -71,7 +66,7 @@ class AgentSection(BaseModel):
         if not isinstance(data, dict):
             return data
         data = dict(data)
-        csl_dir = Path(str(data.get("csl_dir", _csl_dir()))).expanduser()
+        csl_dir = Path(str(data.get("csl_dir", CslPaths.platform_base()))).expanduser()
         data["csl_dir"] = csl_dir
         _defaults: dict[str, Path] = {
             "scripts_dir": csl_dir / "scripts",
@@ -94,6 +89,16 @@ class AgentSection(BaseModel):
         self.state_path = self.state_path.expanduser()
         self.approvals_path = self.approvals_path.expanduser()
         return self
+
+    def to_csl_paths(self) -> CslPaths:
+        """Convert this section's resolved paths into a ``CslPaths`` instance."""
+        return CslPaths(
+            scripts_dir=self.scripts_dir,
+            pending_dir=self.pending_dir,
+            logs_dir=self.logs_dir,
+            approvals_path=self.approvals_path,
+            state_path=self.state_path,
+        )
 
 
 class IdentitySection(BaseModel):

@@ -5,39 +5,33 @@ from pathlib import Path
 import pytest
 
 from control_station_lite.agent.approvals import ApprovalError, ApprovalsManager
+from control_station_lite.agent.paths import CslPaths
 from control_station_lite.shared.models import ApprovalState
 
 # ---------------------------------------------------------------------------
-# Fixture
+# Fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def dirs(tmp_path: Path) -> dict[str, Path]:
-    return {
-        "approvals": tmp_path / "agent" / "approvals.json",
-        "scripts": tmp_path / "scripts",
-        "pending": tmp_path / "scripts.pending",
-    }
-
-
-@pytest.fixture
-def mgr(dirs: dict[str, Path]) -> ApprovalsManager:
-    return ApprovalsManager(
-        approvals_path=dirs["approvals"],
-        scripts_dir=dirs["scripts"],
-        pending_dir=dirs["pending"],
+def paths(tmp_path: Path) -> CslPaths:
+    return CslPaths(
+        scripts_dir=tmp_path / "scripts",
+        pending_dir=tmp_path / "scripts.pending",
+        logs_dir=tmp_path / "logs",
+        approvals_path=tmp_path / "agent" / "approvals.json",
+        state_path=tmp_path / "agent" / "running.json",
     )
 
 
 @pytest.fixture
-def auto_mgr(dirs: dict[str, Path]) -> ApprovalsManager:
-    return ApprovalsManager(
-        approvals_path=dirs["approvals"],
-        scripts_dir=dirs["scripts"],
-        pending_dir=dirs["pending"],
-        auto_approve_list=["sleep_machine"],
-    )
+def mgr(paths: CslPaths) -> ApprovalsManager:
+    return ApprovalsManager(paths)
+
+
+@pytest.fixture
+def auto_mgr(paths: CslPaths) -> ApprovalsManager:
+    return ApprovalsManager(paths, auto_approve_list=["sleep_machine"])
 
 
 # ---------------------------------------------------------------------------
@@ -52,13 +46,9 @@ class TestInitialState:
     def test_list_all_empty_initially(self, mgr: ApprovalsManager) -> None:
         assert mgr.list_all() == []
 
-    def test_missing_approvals_json_is_fine(self, dirs: dict[str, Path]) -> None:
-        assert not dirs["approvals"].exists()
-        m = ApprovalsManager(
-            approvals_path=dirs["approvals"],
-            scripts_dir=dirs["scripts"],
-            pending_dir=dirs["pending"],
-        )
+    def test_missing_approvals_json_is_fine(self, paths: CslPaths) -> None:
+        assert not paths.approvals_path.exists()
+        m = ApprovalsManager(paths)
         assert m.get_state("x").state == ApprovalState.absent
 
 
@@ -80,17 +70,13 @@ class TestStageFromAbsent:
         mgr.stage("sleep_machine", "content", "deadbeef")
         assert mgr.get_state("sleep_machine").pending_md5 == "deadbeef"
 
-    def test_file_written_to_pending_dir(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_file_written_to_pending_dir(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("sleep_machine", "content", "md5")
-        assert (dirs["pending"] / "sleep_machine").exists()
+        assert (paths.pending_dir / "sleep_machine").exists()
 
-    def test_meta_yaml_written_when_provided(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_meta_yaml_written_when_provided(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("sleep_machine", "content", "md5", meta_yaml="description: test\n")
-        assert (dirs["pending"] / "sleep_machine.meta.yaml").exists()
+        assert (paths.pending_dir / "sleep_machine.meta.yaml").exists()
 
     def test_appears_in_list_all(self, mgr: ApprovalsManager) -> None:
         mgr.stage("sleep_machine", "content", "md5")
@@ -109,11 +95,11 @@ class TestStageAutoApprove:
         assert result == ApprovalState.approved
 
     def test_file_in_scripts_dir_not_pending(
-        self, auto_mgr: ApprovalsManager, dirs: dict[str, Path]
+        self, auto_mgr: ApprovalsManager, paths: CslPaths
     ) -> None:
         auto_mgr.stage("sleep_machine", "content", "md5")
-        assert (dirs["scripts"] / "sleep_machine").exists()
-        assert not (dirs["pending"] / "sleep_machine").exists()
+        assert (paths.scripts_dir / "sleep_machine").exists()
+        assert not (paths.pending_dir / "sleep_machine").exists()
 
     def test_approved_via_auto(self, auto_mgr: ApprovalsManager) -> None:
         auto_mgr.stage("sleep_machine", "content", "md5")
@@ -148,39 +134,33 @@ class TestStageIdempotency:
 
 
 class TestApproveFromPending:
-    def test_state_becomes_approved(self, mgr: ApprovalsManager, dirs: dict[str, Path]) -> None:
+    def test_state_becomes_approved(self, mgr: ApprovalsManager) -> None:
         mgr.stage("s", "content", "md5")
         mgr.approve("s")
         assert mgr.get_state("s").state == ApprovalState.approved
 
-    def test_approved_md5_matches_pending_md5(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_approved_md5_matches_pending_md5(self, mgr: ApprovalsManager) -> None:
         mgr.stage("s", "content", "deadbeef")
         mgr.approve("s")
         assert mgr.get_state("s").approved_md5 == "deadbeef"
 
-    def test_file_moved_to_scripts_dir(self, mgr: ApprovalsManager, dirs: dict[str, Path]) -> None:
+    def test_file_moved_to_scripts_dir(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("s", "content", "md5")
         mgr.approve("s")
-        assert (dirs["scripts"] / "s").exists()
-        assert not (dirs["pending"] / "s").exists()
+        assert (paths.scripts_dir / "s").exists()
+        assert not (paths.pending_dir / "s").exists()
 
-    def test_meta_yaml_moved_when_present(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_meta_yaml_moved_when_present(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("s", "content", "md5", meta_yaml="description: x\n")
         mgr.approve("s")
-        assert (dirs["scripts"] / "s.meta.yaml").exists()
-        assert not (dirs["pending"] / "s.meta.yaml").exists()
+        assert (paths.scripts_dir / "s.meta.yaml").exists()
+        assert not (paths.pending_dir / "s.meta.yaml").exists()
 
     def test_cannot_approve_absent(self, mgr: ApprovalsManager) -> None:
         with pytest.raises(ApprovalError, match="not found"):
             mgr.approve("no_such_script")
 
-    def test_cannot_approve_already_approved(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_cannot_approve_already_approved(self, mgr: ApprovalsManager) -> None:
         mgr.stage("s", "content", "md5")
         mgr.approve("s")
         with pytest.raises(ApprovalError):
@@ -242,12 +222,10 @@ class TestReject:
         mgr.reject("s")
         assert mgr.get_state("s").state == ApprovalState.rejected
 
-    def test_reject_removes_pending_file(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_reject_removes_pending_file(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("s", "content", "md5")
         mgr.reject("s")
-        assert not (dirs["pending"] / "s").exists()
+        assert not (paths.pending_dir / "s").exists()
 
     def test_reject_update_pending_gives_rejected(self, mgr: ApprovalsManager) -> None:
         mgr.stage("s", "v1", "md5v1")
@@ -300,19 +278,16 @@ class TestClear:
         with pytest.raises(ApprovalError, match="not found"):
             mgr.clear("no_such_script")
 
-    def test_clear_removes_approved_file(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_clear_removes_approved_file(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("s", "content", "md5")
         mgr.approve("s")
         mgr.clear("s")
-        assert not (dirs["scripts"] / "s").exists()
+        assert not (paths.scripts_dir / "s").exists()
 
     def test_clear_allows_restage_after_reject(self, mgr: ApprovalsManager) -> None:
         mgr.stage("s", "content", "md5")
         mgr.reject("s")
         mgr.clear("s")
-        # After clear the script is absent — staging it is valid again.
         result = mgr.stage("s", "content", "md5")
         assert result == ApprovalState.pending
 
@@ -329,45 +304,29 @@ class TestClear:
 
 
 class TestPersistence:
-    def test_state_survives_reload(self, dirs: dict[str, Path]) -> None:
-        m1 = ApprovalsManager(
-            approvals_path=dirs["approvals"],
-            scripts_dir=dirs["scripts"],
-            pending_dir=dirs["pending"],
-        )
+    def test_state_survives_reload(self, paths: CslPaths) -> None:
+        m1 = ApprovalsManager(paths)
         m1.stage("s", "content", "md5")
         m1.approve("s")
 
-        m2 = ApprovalsManager(
-            approvals_path=dirs["approvals"],
-            scripts_dir=dirs["scripts"],
-            pending_dir=dirs["pending"],
-        )
+        m2 = ApprovalsManager(paths)
         assert m2.get_state("s").state == ApprovalState.approved
         assert m2.get_state("s").approved_md5 == "md5"
 
-    def test_approvals_json_is_valid_json(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_approvals_json_is_valid_json(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("s", "content", "md5")
-        raw = json.loads(dirs["approvals"].read_text())
+        raw = json.loads(paths.approvals_path.read_text())
         assert "scripts" in raw
         assert raw["scripts"]["s"]["state"] == "pending"
 
-    def test_atomic_write_leaves_no_tmp_file(
-        self, mgr: ApprovalsManager, dirs: dict[str, Path]
-    ) -> None:
+    def test_atomic_write_leaves_no_tmp_file(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("s", "content", "md5")
-        assert not dirs["approvals"].with_suffix(".tmp").exists()
+        assert not paths.approvals_path.with_suffix(".tmp").exists()
 
-    def test_corrupt_json_starts_fresh(self, dirs: dict[str, Path]) -> None:
-        dirs["approvals"].parent.mkdir(parents=True, exist_ok=True)
-        dirs["approvals"].write_text("not valid json{{{", encoding="utf-8")
-        m = ApprovalsManager(
-            approvals_path=dirs["approvals"],
-            scripts_dir=dirs["scripts"],
-            pending_dir=dirs["pending"],
-        )
+    def test_corrupt_json_starts_fresh(self, paths: CslPaths) -> None:
+        paths.approvals_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.approvals_path.write_text("not valid json{{{", encoding="utf-8")
+        m = ApprovalsManager(paths)
         assert m.get_state("s").state == ApprovalState.absent
 
 

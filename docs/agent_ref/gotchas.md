@@ -22,6 +22,20 @@ The integration tests cover both; check them before changing the agent-start flo
 Use the `aiosqlite` driver (already in `[server]` extras). Configure `journal_mode=WAL` on the
 engine to allow concurrent reads without blocking writes.
 
+## Cross-platform test markers and `_find_script`
+
+`_find_script` resolves extensions at runtime using `IS_WINDOWS`: Linux tries `.sh`, `.bash`,
+then bare; Windows tries `.ps1`, `.bat`, `.cmd`, then bare.  A test that creates a `.ps1` file
+and calls `_find_script` will silently *not find it* on Linux (wrong extension list), then raise
+on the assertion — the test appears to test cross-platform behaviour but is actually
+Windows-only.
+
+Rule: any test whose correctness depends on `_find_script` or `_build_command` output for a
+specific extension must carry `@pytest.mark.linux_only` or `@pytest.mark.windows_only`.
+
+Exception: bare-name scripts (no extension) are the last entry in **both** extension lists, so
+tests for the bare-name case are genuinely cross-platform.
+
 ## approvals.json / filesystem drift
 
 `ApprovalsManager` treats `approvals.json` as authoritative. If a user manually deletes

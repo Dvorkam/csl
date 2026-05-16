@@ -427,7 +427,7 @@ control_station_lite/
 
 ```
 ~/.csl/                                    # Linux/macOS
-%APPDATA%\control-station-lite\            # Windows
+%USERPROFILE%\.csl\                        # Windows (home-dir equivalent of ~/.csl/)
 ├── scripts/                               # Approved scripts (runnable)
 │   ├── start_llama.sh
 │   ├── start_llama.meta.yaml

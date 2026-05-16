@@ -6,7 +6,9 @@ from control_station_lite.agent.main import _AGENT_HOST, app
 
 @pytest.fixture(scope="module")
 def client() -> TestClient:
-    return TestClient(app)
+    # Use as context manager so the lifespan (manager initialisation) runs.
+    with TestClient(app) as c:
+        return c
 
 
 @pytest.fixture(scope="module")
@@ -52,6 +54,16 @@ class TestStubEndpoints:
         assert response.status_code == 501
 
 
+class TestStreamJobLogs:
+    def test_unknown_job_returns_404(self, client: TestClient) -> None:
+        resp = client.get("/jobs/nonexistent-uuid/stream")
+        assert resp.status_code == 404
+
+    def test_404_body_mentions_job_uuid(self, client: TestClient) -> None:
+        resp = client.get("/jobs/no-such-job/stream")
+        assert "no-such-job" in resp.text
+
+
 class TestLocalhostBinding:
     def test_agent_host_constant_is_loopback(self) -> None:
         assert _AGENT_HOST == "127.0.0.1"
@@ -65,6 +77,7 @@ _EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
     ("GET", "/scripts/{name}/state"),
     ("POST", "/scripts/{name}/stage"),
     ("POST", "/jobs"),
+    ("GET", "/jobs/{job_uuid}/stream"),
 }
 
 

@@ -7,21 +7,23 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 1.7** — `agent/process_manager.py`  
-Start persistent processes (approval-gated), track them, allow kill. Platform-appropriate
-process group handling so kill cleans up children.  
-Branch: `feature/task-1.7-process-manager`
+**Task 1.10** — `agent/lifecycle.py`  
+Background task counts idle seconds; triggers shutdown when `running_persistent == 0`
+and `idle > timeout`.  
+Branch: `feature/task-1.10-lifecycle`
 
 ## Up next
 
-**Task 1.8** — `agent/log_stream.py`  
-Persistent jobs write stdout/stderr to `logs/{job_uuid}.log`. SSE endpoint tails the
-file and pushes new lines. Multiple subscribers supported.
+**Task 1.11** — `agent/service_installer.py`  
+Install user-level service on Linux (systemd --user), Windows (Task Scheduler), macOS (launchd).
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 1.9 | `agent/state.py`: `JobEntry` Pydantic model; atomic `save_running_state` / `load_running_state`; `ProcessManager.save_state()` + `restore_state()`; `_ReattachedProcess` (Popen duck-type for recovered PIDs); `_pid_alive()` cross-platform (ctypes on Windows); lifespan calls restore; 27 new tests | `feature/task-1.9-state` |
+| 1.8 | `agent/log_stream.py`: `tail_log` async generator with drain-on-exit; `sse_events` SSE envelope; `make_sse_response`; `GET /jobs/{uuid}/stream` endpoint; managers wired in lifespan; 18 unit tests | `feature/task-1.8-log-stream` |
+| 1.7 | `agent/process_manager.py` + `agent/paths.py` (`CslPaths`): approval-gated persistent process start; SIGTERM→SIGKILL kill; `running_count()`; `CslPaths` centralises all agent paths with `platform_base()` cached; helpers made public in `script_runner.py`; 204 tests | `feature/task-1.7-process-manager` |
 | 1.6 | `agent/script_runner.py`: cross-platform execution (.sh/.ps1/.bat); `CSL_PARAM_*` env vars; approval gate; platform markers in tests | `feature/task-1.6-script-runner` |
 | 1.5 | `agent/approvals.py`: full state machine, atomic JSON write, audit log, thread-safe; 46 unit tests | `feature/task-1.5-approvals` |
 | 1.4 | `agent/main.py`: FastAPI app; `/healthz` implemented; 3 stub endpoints (501); `127.0.0.1`-only binding; 10 unit + 4 contract tests | `feature/task-1.4-agent-main` |

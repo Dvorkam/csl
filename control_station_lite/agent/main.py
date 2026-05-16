@@ -16,12 +16,17 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
+from control_station_lite.agent.approvals import ApprovalsManager
 from control_station_lite.agent.config import AgentConfig, load_config
+from control_station_lite.agent.log_stream import make_sse_response
+from control_station_lite.agent.process_manager import JobNotFoundError, ProcessManager
 from control_station_lite.shared.models import (
     AgentHealth,
     JobRequest,
+    JobStatus,
     JobStatusResponse,
     ScriptDescriptor,
     StageScriptRequest,
@@ -41,11 +46,23 @@ _NOT_IMPLEMENTED: dict[int | str, dict[str, object]] = {501: {"description": "No
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
-    application.state.config = load_config()
+    cfg: AgentConfig = load_config()
+    paths = cfg.agent.to_csl_paths()
+    paths.ensure_dirs()
+
+    approvals = ApprovalsManager(paths, auto_approve_list=cfg.approval_policy.auto_approve)
+    process_mgr = ProcessManager(paths, approvals)
+
+    process_mgr.restore_state()
+
+    application.state.config = cfg
+    application.state.approvals = approvals
+    application.state.process_manager = process_mgr
+
     logger.info(
         "agent starting on %s:%d",
         _AGENT_HOST,
-        application.state.config.agent.listen_port,
+        cfg.agent.listen_port,
     )
     yield
 
@@ -65,11 +82,12 @@ app = FastAPI(
 
 
 @app.get("/healthz", response_model=AgentHealth)
-async def healthz() -> AgentHealth:
+async def healthz(request: Request) -> AgentHealth:
     """Report agent liveness and basic runtime state."""
+    pm: ProcessManager = request.app.state.process_manager
     return AgentHealth(
         version=_version(),
-        running_persistent_jobs=0,
+        running_persistent_jobs=pm.running_count(),
         idle_seconds=0.0,
     )
 
@@ -103,6 +121,39 @@ async def stage_script(name: str, body: StageScriptRequest) -> StageScriptRespon
 async def submit_job(body: JobRequest) -> JobStatusResponse:
     """Submit a job for execution (script must already be approved)."""
     raise HTTPException(status_code=501, detail="job execution not yet implemented")
+
+
+@app.get("/jobs/{job_uuid}/stream", response_class=StreamingResponse)
+async def stream_job_logs(
+    job_uuid: str,
+    request: Request,
+    tail: int = 1000,
+) -> StreamingResponse:
+    """Stream stdout/stderr from a persistent job as SSE events.
+
+    Each event carries one log line: ``data: <line>\\n\\n``.
+    A final ``event: done`` signals the end of the stream.
+
+    ``tail`` controls how many existing log lines are replayed on connect
+    (default 1 000).  Pass ``tail=-1`` to replay the entire log, or
+    ``tail=0`` to receive only live output.
+    """
+    pm: ProcessManager = request.app.state.process_manager
+    try:
+        log_path = pm.get_log_path(job_uuid)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found") from exc
+
+    if not log_path.exists():
+        raise HTTPException(status_code=404, detail=f"log file for job {job_uuid!r} not found")
+
+    def _is_done() -> bool:
+        try:
+            return pm.get_status(job_uuid).status != JobStatus.running
+        except JobNotFoundError:
+            return True
+
+    return make_sse_response(log_path, is_done=_is_done, tail_lines=tail)
 
 
 def main() -> None:
