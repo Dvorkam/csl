@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(git commit -m ' *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(mkdir -p /home/dvorkam/repos/csl/docs/agent_ref)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(uv sync *)",
+      "Bash(python -c \"import schemathesis; print\\(dir\\(schemathesis\\)\\)\")"
+    ],
+    "additionalDirectories": [
+      "/home/dvorkam/repos/csl/docs"
     ]
   }
 }

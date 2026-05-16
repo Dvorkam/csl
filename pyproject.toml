@@ -90,6 +90,10 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--cov=control_station_lite --cov-report=term-missing"
+markers = [
+    "linux_only: test runs on Linux only — skipped on other platforms",
+    "windows_only: test runs on Windows only — skipped on other platforms",
+]
 
 [tool.coverage.run]
 branch = true
