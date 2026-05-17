@@ -36,7 +36,7 @@ The agent is testable in isolation (no control station needed). Build it first t
   - Linux: write `~/.config/systemd/user/csl-agent.service` with `Restart=no`, run `systemctl --user daemon-reload`. **Do not** `--user enable` — the service must be on-demand only.
   - Windows: register a Task Scheduler task via `schtasks /create`, demand-only trigger, action `pythonw -m control_station_lite.agent`.
   - macOS: write a `launchd` user agent plist into `~/Library/LaunchAgents/`, load with `launchctl load`.
-- [ ] **1.12** Implement `agent/cli.py` and `csl-agent init` command:
+- [x] **1.12** Implement `agent/cli.py` and `csl-agent init` command:
   - Create `~/.csl/` folder structure including `scripts.pending/`.
   - Generate SSH keypair (Ed25519).
   - Append public key to `~/.ssh/authorized_keys` (create file with correct permissions if absent; idempotent).

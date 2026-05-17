@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 1.12** — `agent/cli.py` and `csl-agent init` command.
+**Task 1.13** — `csl-agent approvals` subcommands: `list`, `show`, `diff`, `approve`, `reject`, `clear`.
 
 ## Up next
 
-**Task 1.13** — `csl-agent approvals` subcommands: `list`, `show`, `diff`, `approve`, `reject`, `clear`.
+**Task 1.14** — `csl-agent policy` subcommands: `auto-approve`, `manual`, `show`.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 1.12 | `agent/cli.py` + `shared/registration.py`: argparse CLI (`csl-agent init`); Ed25519 keypair generation via `cryptography`; idempotent `authorized_keys` append (700/600 perms); `config.yaml` + empty `approvals.json` write; `install_service()` call (non-fatal on failure); base64-JSON registration bundle; `RegistrationBundle.decode()` with full validation; `cryptography` moved to base deps; 45 unit tests | `feature/task-1.12-cli` |
 | 1.11 | `agent/service_installer.py`: `install_service()` dispatches to `_install_linux` (writes `~/.config/systemd/user/csl-agent.service`, `Restart=no`, `daemon-reload`), `_install_macos` (writes `~/Library/LaunchAgents/com.controlstationlite.agent.plist`, `launchctl load`), `_install_windows` (XML task, `schtasks /create /f`, no triggers); `_agent_executable()` prefers `pythonw.exe` on Windows; `macos_only` marker added to conftest; 26 tests (9 skipped on Linux) | `feature/task-1.11-service-installer` |
 | 1.10 | `agent/lifecycle.py`: `IdleTracker` (thread-safe idle clock, `record_activity`, `idle_seconds`, `shutdown_due`); `run_loop` async background task; `_HasRunningCount` Protocol to avoid circular import; `_ActivityMiddleware` in `main.py` resets clock on every request; `/healthz` now reports real `idle_seconds`; `asyncio.create_task` in lifespan with clean cancel on shutdown; 14 unit + integration tests | `feature/task-1.10-lifecycle` |
 | 1.9 | `agent/state.py`: `JobEntry` Pydantic model; atomic `save_running_state` / `load_running_state`; `ProcessManager.save_state()` + `restore_state()`; `_ReattachedProcess` (Popen duck-type for recovered PIDs); `_pid_alive()` cross-platform (ctypes on Windows); lifespan calls restore; 27 new tests | `feature/task-1.9-state` |
