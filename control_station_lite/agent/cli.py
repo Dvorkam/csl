@@ -371,7 +371,7 @@ def _windows_is_admin() -> bool:
     if sys.platform == "win32":
         import ctypes
 
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
     return False
 
 
