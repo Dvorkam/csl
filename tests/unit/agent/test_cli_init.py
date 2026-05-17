@@ -108,7 +108,10 @@ class TestAppendAuthorizedKeys:
         _, _, pub = _generate_keypair(tmp_path / "keys")
         ak = tmp_path / ".ssh" / "authorized_keys"
 
-        with patch("pathlib.Path.home", return_value=tmp_path):
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+        ):
             _append_authorized_keys(pub)
 
         assert ak.exists()
@@ -121,7 +124,10 @@ class TestAppendAuthorizedKeys:
         ak = ssh_dir / "authorized_keys"
         ak.write_text("ssh-rsa EXISTING_KEY user@host\n")
 
-        with patch("pathlib.Path.home", return_value=tmp_path):
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+        ):
             _append_authorized_keys(pub)
 
         content = ak.read_text()
@@ -131,7 +137,10 @@ class TestAppendAuthorizedKeys:
     def test_idempotent_does_not_duplicate(self, tmp_path: Path) -> None:
         _, _, pub = _generate_keypair(tmp_path / "keys")
 
-        with patch("pathlib.Path.home", return_value=tmp_path):
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+        ):
             _append_authorized_keys(pub)
             _append_authorized_keys(pub)
 
@@ -353,9 +362,10 @@ class TestCmdInit:
                 "control_station_lite.agent.cli.default_config_path",
                 return_value=tmp_path / ".csl" / "config.yaml",
             ),
-            patch(
-                "control_station_lite.agent.cli.install_service",
-            ),
+            patch("control_station_lite.agent.cli.install_service"),
+            # Always use the user-level authorized_keys path in tests so they
+            # work regardless of whether the CI runner is an Administrator.
+            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
             patch("sys.argv", args),
         ):
             main()
