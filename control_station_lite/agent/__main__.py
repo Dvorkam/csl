@@ -9,7 +9,7 @@
 # (at your option) any later version, with an additional permission for
 # distribution through app stores (see LICENSE).
 
-from control_station_lite.agent.cli import main
+from control_station_lite.agent.main import main
 
 if __name__ == "__main__":
     main()

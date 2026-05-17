@@ -31,8 +31,8 @@ The agent is testable in isolation (no control station needed). Build it first t
 - [x] **1.7** Implement `agent/process_manager.py`: start persistent processes (also approval-gated), track them, allow kill, return status. Use `subprocess.Popen` with platform-appropriate process group handling so kill cleans up children.
 - [x] **1.8** Implement `agent/log_stream.py`: persistent jobs write stdout/stderr to `logs/{job_uuid}.log`. SSE endpoint `/jobs/{id}/stream` tails the file and pushes new lines. Multiple subscribers supported.
 - [x] **1.9** Implement `agent/state.py`: serialize/deserialize `running.json`. On startup, reattach to processes whose PIDs are still alive; mark the rest as terminated.
-- [ ] **1.10** Implement `agent/lifecycle.py`: background task counts idle seconds; triggers shutdown when `running_persistent == 0 and idle > timeout`.
-- [ ] **1.11** Implement `agent/service_installer.py`:
+- [x] **1.10** Implement `agent/lifecycle.py`: background task counts idle seconds; triggers shutdown when `running_persistent == 0 and idle > timeout`.
+- [x] **1.11** Implement `agent/service_installer.py`:
   - Linux: write `~/.config/systemd/user/csl-agent.service` with `Restart=no`, run `systemctl --user daemon-reload`. **Do not** `--user enable` — the service must be on-demand only.
   - Windows: register a Task Scheduler task via `schtasks /create`, demand-only trigger, action `pythonw -m control_station_lite.agent`.
   - macOS: write a `launchd` user agent plist into `~/Library/LaunchAgents/`, load with `launchctl load`.

@@ -1,10 +1,38 @@
 # Known gotchas
 
+## Editable install required for service testing in dev
+
+`uv sync` does NOT install `control_station_lite` into site-packages — it only sets up the
+project path for `uv run`. When systemd (or any process) invokes the venv Python directly, the
+package is not importable and the service fails with `ModuleNotFoundError: No module named
+'control_station_lite'`.
+
+Fix: run `uv pip install -e .` once after cloning or after adding `deploy/` or other top-level
+directories. This creates a `.pth` file in site-packages so the package is importable from any
+working directory.
+
+In production this is a non-issue: `pip install control-station-lite[agent]` installs the
+package normally.
+
 ## Agent lifecycle
 
 The agent self-terminates when idle. Tests that start a real agent process must either disable
 the lifecycle background task or set `idle_timeout_seconds` to a very high value, otherwise the
 agent exits mid-test.
+
+## Windows — pythonw.exe has no stdout/stderr
+
+When the agent runs under `pythonw.exe` (as started by Task Scheduler), `sys.stdout`
+and `sys.stderr` are both `None`.  Uvicorn's default colour log formatter calls
+`sys.stdout.isatty()` during startup and raises `AttributeError: 'NoneType' object has
+no attribute 'isatty'`, preventing the server from starting.
+
+Fix: in `agent/main.py`, check `sys.stderr is not None` before calling `logging.basicConfig`,
+and pass `log_config=None` to `uvicorn.run()` so uvicorn skips its `dictConfig` entirely.
+Any uvicorn log calls then flow through the root logger configured by `basicConfig`.
+
+The same pattern applies to any library that touches stdout/stderr during import or
+initialisation — guard with `if sys.stdout is not None` before any console interaction.
 
 ## Windows — process group kill
 

@@ -37,7 +37,7 @@ class TestAgentSectionDefaults:
         assert AgentSection().listen_port == 47731
 
     def test_default_idle_timeout(self) -> None:
-        assert AgentSection().idle_timeout_seconds == 300
+        assert AgentSection().idle_timeout_seconds == 600
 
     def test_paths_are_expanded(self) -> None:
         s = AgentSection()
@@ -149,7 +149,7 @@ class TestLoadConfigValid:
         config_file.write_text("agent:\n  listen_port: 1234\n", encoding="utf-8")
         cfg = load_config(config_file)
         assert cfg.agent.listen_port == 1234
-        assert cfg.agent.idle_timeout_seconds == 300
+        assert cfg.agent.idle_timeout_seconds == 600
         assert cfg.identity.key_fingerprint is None
 
     def test_empty_file_returns_defaults(self, tmp_path: Path) -> None:

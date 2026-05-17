@@ -11,16 +11,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.metadata
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from control_station_lite.agent.approvals import ApprovalsManager
 from control_station_lite.agent.config import AgentConfig, load_config
+from control_station_lite.agent.lifecycle import IdleTracker
 from control_station_lite.agent.log_stream import make_sse_response
 from control_station_lite.agent.process_manager import JobNotFoundError, ProcessManager
 from control_station_lite.shared.models import (
@@ -52,19 +55,29 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
     approvals = ApprovalsManager(paths, auto_approve_list=cfg.approval_policy.auto_approve)
     process_mgr = ProcessManager(paths, approvals)
+    tracker = IdleTracker(timeout_seconds=cfg.agent.idle_timeout_seconds)
 
     process_mgr.restore_state()
 
     application.state.config = cfg
     application.state.approvals = approvals
     application.state.process_manager = process_mgr
+    application.state.tracker = tracker
 
     logger.info(
         "agent starting on %s:%d",
         _AGENT_HOST,
         cfg.agent.listen_port,
     )
-    yield
+    shutdown_task = asyncio.create_task(tracker.run_loop(process_mgr))
+    try:
+        yield
+    finally:
+        shutdown_task.cancel()
+        try:
+            await shutdown_task
+        except asyncio.CancelledError:
+            pass
 
 
 def _version() -> str:
@@ -81,14 +94,28 @@ app = FastAPI(
 )
 
 
+class _ActivityMiddleware(BaseHTTPMiddleware):
+    """Reset the idle clock on every incoming HTTP request."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        tracker: IdleTracker | None = getattr(request.app.state, "tracker", None)
+        if tracker is not None:
+            tracker.record_activity()
+        return await call_next(request)
+
+
+app.add_middleware(_ActivityMiddleware)
+
+
 @app.get("/healthz", response_model=AgentHealth)
 async def healthz(request: Request) -> AgentHealth:
     """Report agent liveness and basic runtime state."""
     pm: ProcessManager = request.app.state.process_manager
+    tracker: IdleTracker = request.app.state.tracker
     return AgentHealth(
         version=_version(),
         running_persistent_jobs=pm.running_count(),
-        idle_seconds=0.0,
+        idle_seconds=tracker.idle_seconds,
     )
 
 
@@ -158,7 +185,25 @@ async def stream_job_logs(
 
 def main() -> None:
     """Entry point for the csl-agent server process."""
+    import logging
+    import sys
+
     import uvicorn
+
+    # Uvicorn's default log formatter calls sys.stdout.isatty() to detect
+    # colour support.  Under pythonw.exe (Task Scheduler, no console) both
+    # sys.stdout and sys.stderr are None, which causes an AttributeError
+    # before the server even starts.  We configure logging ourselves and
+    # pass log_config=None so uvicorn skips its dictConfig entirely.
+    if sys.stderr is not None:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        )
+    else:
+        # Headless — discard global agent logs for now; per-job output goes
+        # to individual log files under ~/.csl/logs/.
+        logging.basicConfig(handlers=[logging.NullHandler()])
 
     cfg: AgentConfig = load_config()
     uvicorn.run(
@@ -166,4 +211,5 @@ def main() -> None:
         host=_AGENT_HOST,
         port=cfg.agent.listen_port,
         log_level="info",
+        log_config=None,
     )
