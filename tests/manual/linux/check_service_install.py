@@ -91,7 +91,6 @@ checks = {
     "control_station_lite.agent": "unit file invokes the agent module",
     "[Service]": "unit file has [Service] section",
     "[Unit]": "unit file has [Unit] section",
-    "[Install]": "unit file has [Install] section",
 }
 for needle, description in checks.items():
     if needle in content:

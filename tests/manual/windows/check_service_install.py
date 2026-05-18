@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from control_station_lite.agent.cli import _windows_is_admin  # noqa: E402
+from control_station_lite.agent.cli.cmd_setup import _windows_is_admin  # noqa: E402
 from control_station_lite.agent.service_installer import install_service  # noqa: E402
 from control_station_lite.shared.platform_info import IS_WINDOWS  # noqa: E402
 

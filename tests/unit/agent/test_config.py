@@ -5,6 +5,7 @@ import pytest
 import yaml
 
 from control_station_lite.agent.config import (
+    AdvancedSection,
     AgentConfig,
     AgentSection,
     ApprovalPolicySection,
@@ -38,6 +39,12 @@ class TestAgentSectionDefaults:
 
     def test_default_idle_timeout(self) -> None:
         assert AgentSection().idle_timeout_seconds == 600
+
+    def test_default_lifecycle_check_interval(self) -> None:
+        assert AgentSection().lifecycle_check_interval_seconds == 10
+
+    def test_default_log_tail_lines(self) -> None:
+        assert AgentSection().log_tail_lines == 1000
 
     def test_paths_are_expanded(self) -> None:
         s = AgentSection()
@@ -85,12 +92,32 @@ class TestApprovalPolicySection:
 # ---------------------------------------------------------------------------
 
 
+class TestAdvancedSection:
+    def test_default_windows_admin_ak_path(self) -> None:
+        s = AdvancedSection()
+        assert "administrators_authorized_keys" in str(s.windows_admin_authorized_keys_path)
+
+    def test_path_is_expanded(self) -> None:
+        s = AdvancedSection()
+        assert "~" not in str(s.windows_admin_authorized_keys_path)
+
+    def test_custom_path(self) -> None:
+        s = AdvancedSection(windows_admin_authorized_keys_path=Path("/tmp/test_ak"))  # type: ignore[arg-type]
+        assert s.windows_admin_authorized_keys_path == Path("/tmp/test_ak")
+
+
+# ---------------------------------------------------------------------------
+# AgentConfig defaults
+# ---------------------------------------------------------------------------
+
+
 class TestAgentConfigDefaults:
     def test_all_sections_present(self) -> None:
         cfg = AgentConfig()
         assert isinstance(cfg.agent, AgentSection)
         assert isinstance(cfg.identity, IdentitySection)
         assert isinstance(cfg.approval_policy, ApprovalPolicySection)
+        assert isinstance(cfg.advanced, AdvancedSection)
 
 
 # ---------------------------------------------------------------------------

@@ -15,22 +15,25 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from control_station_lite.agent.cli import (
+from control_station_lite.agent.cli import main
+from control_station_lite.agent.cli.cmd_init import (
     _append_authorized_keys,
-    _check_readiness_linux,
-    _check_readiness_macos,
-    _check_readiness_windows,
     _generate_keypair,
     _platform_name,
     _ssh_fingerprint,
+    _write_approvals,
+    _write_config,
+)
+from control_station_lite.agent.cli.cmd_setup import (
+    ReadinessIssue,
+    _check_readiness_linux,
+    _check_readiness_macos,
+    _check_readiness_windows,
     _sshd_running_linux,
     _sshd_running_macos,
     _sshd_running_windows,
     _windows_is_admin,
-    _write_approvals,
-    _write_config,
     check_readiness,
-    main,
 )
 
 # ---------------------------------------------------------------------------
@@ -110,7 +113,7 @@ class TestAppendAuthorizedKeys:
 
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
         ):
             _append_authorized_keys(pub)
 
@@ -126,7 +129,7 @@ class TestAppendAuthorizedKeys:
 
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
         ):
             _append_authorized_keys(pub)
 
@@ -139,7 +142,7 @@ class TestAppendAuthorizedKeys:
 
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
         ):
             _append_authorized_keys(pub)
             _append_authorized_keys(pub)
@@ -180,10 +183,10 @@ class TestAppendAuthorizedKeysWindowsAdmin:
         admin_ak = tmp_path / "ProgramData" / "ssh" / "administrators_authorized_keys"
 
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", True),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=True),
-            patch("control_station_lite.agent.cli._WINDOWS_ADMIN_AK_PATH", admin_ak),
-            patch("control_station_lite.agent.cli._set_admin_ak_acl"),
+            patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", True),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=True),
+            patch("control_station_lite.agent.cli.cmd_init._WINDOWS_ADMIN_AK_PATH", admin_ak),
+            patch("control_station_lite.agent.cli.cmd_init._set_admin_ak_acl"),
         ):
             _append_authorized_keys(pub)
 
@@ -195,10 +198,10 @@ class TestAppendAuthorizedKeysWindowsAdmin:
         admin_ak = tmp_path / "ProgramData" / "ssh" / "administrators_authorized_keys"
 
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", True),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=True),
-            patch("control_station_lite.agent.cli._WINDOWS_ADMIN_AK_PATH", admin_ak),
-            patch("control_station_lite.agent.cli._set_admin_ak_acl"),
+            patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", True),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=True),
+            patch("control_station_lite.agent.cli.cmd_init._WINDOWS_ADMIN_AK_PATH", admin_ak),
+            patch("control_station_lite.agent.cli.cmd_init._set_admin_ak_acl"),
         ):
             _append_authorized_keys(pub)
 
@@ -209,10 +212,10 @@ class TestAppendAuthorizedKeysWindowsAdmin:
         admin_ak = tmp_path / "ProgramData" / "ssh" / "administrators_authorized_keys"
 
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", True),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=True),
-            patch("control_station_lite.agent.cli._WINDOWS_ADMIN_AK_PATH", admin_ak),
-            patch("control_station_lite.agent.cli._set_admin_ak_acl") as mock_acl,
+            patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", True),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=True),
+            patch("control_station_lite.agent.cli.cmd_init._WINDOWS_ADMIN_AK_PATH", admin_ak),
+            patch("control_station_lite.agent.cli.cmd_init._set_admin_ak_acl") as mock_acl,
         ):
             _append_authorized_keys(pub)
 
@@ -223,10 +226,10 @@ class TestAppendAuthorizedKeysWindowsAdmin:
         admin_ak = tmp_path / "ProgramData" / "ssh" / "administrators_authorized_keys"
 
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", True),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=True),
-            patch("control_station_lite.agent.cli._WINDOWS_ADMIN_AK_PATH", admin_ak),
-            patch("control_station_lite.agent.cli._set_admin_ak_acl"),
+            patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", True),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=True),
+            patch("control_station_lite.agent.cli.cmd_init._WINDOWS_ADMIN_AK_PATH", admin_ak),
+            patch("control_station_lite.agent.cli.cmd_init._set_admin_ak_acl"),
         ):
             _append_authorized_keys(pub)
             _append_authorized_keys(pub)
@@ -237,8 +240,8 @@ class TestAppendAuthorizedKeysWindowsAdmin:
         _, _, pub = _generate_keypair(tmp_path / "keys")
 
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", True),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+            patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", True),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
             patch("pathlib.Path.home", return_value=tmp_path),
         ):
             _append_authorized_keys(pub)
@@ -257,7 +260,7 @@ class TestWriteConfig:
     def test_creates_yaml_file(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.yaml"
         with patch(
-            "control_station_lite.agent.cli.CslPaths.platform_base",
+            "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
             _write_config(config_path, "SHA256:abc", 47731)
@@ -267,7 +270,7 @@ class TestWriteConfig:
     def test_yaml_has_agent_section(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.yaml"
         with patch(
-            "control_station_lite.agent.cli.CslPaths.platform_base",
+            "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
             _write_config(config_path, "SHA256:abc", 47731)
@@ -279,7 +282,7 @@ class TestWriteConfig:
     def test_custom_port(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.yaml"
         with patch(
-            "control_station_lite.agent.cli.CslPaths.platform_base",
+            "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
             _write_config(config_path, "SHA256:xyz", 9000)
@@ -290,7 +293,7 @@ class TestWriteConfig:
     def test_approval_policy_auto_approve_empty(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.yaml"
         with patch(
-            "control_station_lite.agent.cli.CslPaths.platform_base",
+            "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
             _write_config(config_path, "SHA256:abc", 47731)
@@ -326,19 +329,19 @@ class TestPlatformName:
 
     def test_linux_on_linux(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", False),
-            patch("control_station_lite.agent.cli.IS_MACOS", False),
+            patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", False),
+            patch("control_station_lite.agent.cli.cmd_init.IS_MACOS", False),
         ):
             assert _platform_name() == "linux"
 
     def test_windows(self) -> None:
-        with patch("control_station_lite.agent.cli.IS_WINDOWS", True):
+        with patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", True):
             assert _platform_name() == "windows"
 
     def test_macos(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", False),
-            patch("control_station_lite.agent.cli.IS_MACOS", True),
+            patch("control_station_lite.agent.cli.cmd_init.IS_WINDOWS", False),
+            patch("control_station_lite.agent.cli.cmd_init.IS_MACOS", True),
         ):
             assert _platform_name() == "macos"
 
@@ -355,17 +358,17 @@ class TestCmdInit:
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
             patch(
-                "control_station_lite.agent.cli.CslPaths.platform_base",
+                "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
                 return_value=tmp_path / ".csl",
             ),
             patch(
-                "control_station_lite.agent.cli.default_config_path",
+                "control_station_lite.agent.cli.cmd_init.default_config_path",
                 return_value=tmp_path / ".csl" / "config.yaml",
             ),
-            patch("control_station_lite.agent.cli.install_service"),
+            patch("control_station_lite.agent.cli.cmd_init.install_service"),
             # Always use the user-level authorized_keys path in tests so they
             # work regardless of whether the CI runner is an Administrator.
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
             patch("sys.argv", args),
         ):
             main()
@@ -397,7 +400,11 @@ class TestCmdInit:
         config_path = tmp_path / ".csl" / "config.yaml"
         assert config_path.exists()
         data = yaml.safe_load(config_path.read_text())
-        assert data["agent"]["listen_port"] == 47731
+        assert data["agent"]["listen_port"] == 36717
+        assert "lifecycle_check_interval_seconds" in data["agent"]
+        assert "log_tail_lines" in data["agent"]
+        assert "advanced" in data
+        assert "windows_admin_authorized_keys_path" in data["advanced"]
 
     def test_creates_approvals_json(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:  # type: ignore[type-arg]
         self._run_init(tmp_path)
@@ -409,14 +416,14 @@ class TestCmdInit:
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
             patch(
-                "control_station_lite.agent.cli.CslPaths.platform_base",
+                "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
                 return_value=tmp_path / ".csl",
             ),
             patch(
-                "control_station_lite.agent.cli.default_config_path",
+                "control_station_lite.agent.cli.cmd_init.default_config_path",
                 return_value=tmp_path / ".csl" / "config.yaml",
             ),
-            patch("control_station_lite.agent.cli.install_service") as mock_install,
+            patch("control_station_lite.agent.cli.cmd_init.install_service") as mock_install,
             patch("sys.argv", ["csl-agent", "init"]),
         ):
             main()
@@ -440,7 +447,7 @@ class TestCmdInit:
         from control_station_lite.shared.registration import RegistrationBundle
 
         bundle = RegistrationBundle.decode(bundle_line)
-        assert bundle.agent_port == 47731
+        assert bundle.agent_port == 36717
         assert bundle.key_fingerprint.startswith("SHA256:")
         assert bundle.platform in {"linux", "windows", "macos"}
 
@@ -491,15 +498,15 @@ class TestCmdInit:
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
             patch(
-                "control_station_lite.agent.cli.CslPaths.platform_base",
+                "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
                 return_value=tmp_path / ".csl",
             ),
             patch(
-                "control_station_lite.agent.cli.default_config_path",
+                "control_station_lite.agent.cli.cmd_init.default_config_path",
                 return_value=tmp_path / ".csl" / "config.yaml",
             ),
             patch(
-                "control_station_lite.agent.cli.install_service",
+                "control_station_lite.agent.cli.cmd_init.install_service",
                 side_effect=RuntimeError("daemon not running"),
             ),
             patch("sys.argv", ["csl-agent", "init"]),
@@ -518,13 +525,18 @@ class TestCmdInit:
 class TestCheckReadinessLinux:
     def test_all_ok_when_sshd_installed_and_running(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.shutil.which", return_value="/usr/sbin/sshd"),
-            patch("control_station_lite.agent.cli._sshd_running_linux", return_value=True),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup.shutil.which",
+                return_value="/usr/sbin/sshd",
+            ),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._sshd_running_linux", return_value=True
+            ),
         ):
             assert _check_readiness_linux() == []
 
     def test_error_when_sshd_not_installed(self) -> None:
-        with patch("control_station_lite.agent.cli.shutil.which", return_value=None):
+        with patch("control_station_lite.agent.cli.cmd_setup.shutil.which", return_value=None):
             issues = _check_readiness_linux()
         assert len(issues) == 1
         assert issues[0].severity == "error"
@@ -532,8 +544,13 @@ class TestCheckReadinessLinux:
 
     def test_warning_when_sshd_not_running(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.shutil.which", return_value="/usr/sbin/sshd"),
-            patch("control_station_lite.agent.cli._sshd_running_linux", return_value=False),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup.shutil.which",
+                return_value="/usr/sbin/sshd",
+            ),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._sshd_running_linux", return_value=False
+            ),
         ):
             issues = _check_readiness_linux()
         assert len(issues) == 1
@@ -542,16 +559,21 @@ class TestCheckReadinessLinux:
 
     def test_no_running_check_when_not_installed(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.shutil.which", return_value=None),
-            patch("control_station_lite.agent.cli._sshd_running_linux") as mock_running,
+            patch("control_station_lite.agent.cli.cmd_setup.shutil.which", return_value=None),
+            patch("control_station_lite.agent.cli.cmd_setup._sshd_running_linux") as mock_running,
         ):
             _check_readiness_linux()
         mock_running.assert_not_called()
 
     def test_fix_hint_mentions_systemctl(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.shutil.which", return_value="/usr/sbin/sshd"),
-            patch("control_station_lite.agent.cli._sshd_running_linux", return_value=False),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup.shutil.which",
+                return_value="/usr/sbin/sshd",
+            ),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._sshd_running_linux", return_value=False
+            ),
         ):
             issues = _check_readiness_linux()
         assert "systemctl" in issues[0].fix_hint
@@ -560,14 +582,14 @@ class TestCheckReadinessLinux:
 class TestSshdRunningLinux:
     def test_returns_true_when_systemctl_succeeds(self) -> None:
         with patch(
-            "control_station_lite.agent.cli.subprocess.run",
+            "control_station_lite.agent.cli.cmd_setup.subprocess.run",
             return_value=MagicMock(returncode=0),
         ):
             assert _sshd_running_linux() is True
 
     def test_returns_false_when_all_checks_fail(self) -> None:
         with patch(
-            "control_station_lite.agent.cli.subprocess.run",
+            "control_station_lite.agent.cli.cmd_setup.subprocess.run",
             return_value=MagicMock(returncode=1),
         ):
             assert _sshd_running_linux() is False
@@ -581,7 +603,9 @@ class TestSshdRunningLinux:
 class TestCheckReadinessWindows:
     def test_error_when_sshd_exe_missing(self, tmp_path: Path) -> None:
         fake_exe = tmp_path / "sshd.exe"  # does not exist
-        with patch("control_station_lite.agent.cli._sshd_exe_windows", return_value=fake_exe):
+        with patch(
+            "control_station_lite.agent.cli.cmd_setup._sshd_exe_windows", return_value=fake_exe
+        ):
             issues = _check_readiness_windows()
         assert len(issues) == 1
         assert issues[0].severity == "error"
@@ -590,9 +614,13 @@ class TestCheckReadinessWindows:
         fake_exe = tmp_path / "sshd.exe"
         fake_exe.touch()
         with (
-            patch("control_station_lite.agent.cli._sshd_exe_windows", return_value=fake_exe),
-            patch("control_station_lite.agent.cli._sshd_running_windows", return_value=False),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._sshd_exe_windows", return_value=fake_exe
+            ),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._sshd_running_windows", return_value=False
+            ),
+            patch("control_station_lite.agent.cli.cmd_setup._windows_is_admin", return_value=False),
         ):
             issues = _check_readiness_windows()
         assert len(issues) == 1
@@ -603,15 +631,21 @@ class TestCheckReadinessWindows:
         fake_exe = tmp_path / "sshd.exe"
         fake_exe.touch()
         with (
-            patch("control_station_lite.agent.cli._sshd_exe_windows", return_value=fake_exe),
-            patch("control_station_lite.agent.cli._sshd_running_windows", return_value=True),
-            patch("control_station_lite.agent.cli._windows_is_admin", return_value=False),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._sshd_exe_windows", return_value=fake_exe
+            ),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._sshd_running_windows", return_value=True
+            ),
+            patch("control_station_lite.agent.cli.cmd_setup._windows_is_admin", return_value=False),
         ):
             assert _check_readiness_windows() == []
 
     def test_fix_hint_mentions_powershell_install(self, tmp_path: Path) -> None:
         fake_exe = tmp_path / "sshd.exe"  # missing
-        with patch("control_station_lite.agent.cli._sshd_exe_windows", return_value=fake_exe):
+        with patch(
+            "control_station_lite.agent.cli.cmd_setup._sshd_exe_windows", return_value=fake_exe
+        ):
             issues = _check_readiness_windows()
         assert "Add-WindowsCapability" in issues[0].fix_hint
 
@@ -619,14 +653,14 @@ class TestCheckReadinessWindows:
 class TestSshdRunningWindows:
     def test_returns_true_when_running_in_output(self) -> None:
         with patch(
-            "control_station_lite.agent.cli.subprocess.run",
+            "control_station_lite.agent.cli.cmd_setup.subprocess.run",
             return_value=MagicMock(returncode=0, stdout="STATE: 4 RUNNING"),
         ):
             assert _sshd_running_windows() is True
 
     def test_returns_false_when_not_running(self) -> None:
         with patch(
-            "control_station_lite.agent.cli.subprocess.run",
+            "control_station_lite.agent.cli.cmd_setup.subprocess.run",
             return_value=MagicMock(returncode=0, stdout="STATE: 1 STOPPED"),
         ):
             assert _sshd_running_windows() is False
@@ -639,18 +673,24 @@ class TestSshdRunningWindows:
 
 class TestCheckReadinessMacos:
     def test_all_ok_when_sshd_running(self) -> None:
-        with patch("control_station_lite.agent.cli._sshd_running_macos", return_value=True):
+        with patch(
+            "control_station_lite.agent.cli.cmd_setup._sshd_running_macos", return_value=True
+        ):
             assert _check_readiness_macos() == []
 
     def test_warning_when_sshd_not_running(self) -> None:
-        with patch("control_station_lite.agent.cli._sshd_running_macos", return_value=False):
+        with patch(
+            "control_station_lite.agent.cli.cmd_setup._sshd_running_macos", return_value=False
+        ):
             issues = _check_readiness_macos()
         assert len(issues) == 1
         assert issues[0].severity == "warning"
         assert "remote login" in issues[0].description.lower()
 
     def test_fix_hint_mentions_systemsetup(self) -> None:
-        with patch("control_station_lite.agent.cli._sshd_running_macos", return_value=False):
+        with patch(
+            "control_station_lite.agent.cli.cmd_setup._sshd_running_macos", return_value=False
+        ):
             issues = _check_readiness_macos()
         assert "systemsetup" in issues[0].fix_hint
 
@@ -658,14 +698,14 @@ class TestCheckReadinessMacos:
 class TestSshdRunningMacos:
     def test_returns_true_when_launchctl_succeeds(self) -> None:
         with patch(
-            "control_station_lite.agent.cli.subprocess.run",
+            "control_station_lite.agent.cli.cmd_setup.subprocess.run",
             return_value=MagicMock(returncode=0),
         ):
             assert _sshd_running_macos() is True
 
     def test_returns_false_when_both_checks_fail(self) -> None:
         with patch(
-            "control_station_lite.agent.cli.subprocess.run",
+            "control_station_lite.agent.cli.cmd_setup.subprocess.run",
             return_value=MagicMock(returncode=1),
         ):
             assert _sshd_running_macos() is False
@@ -679,19 +719,21 @@ class TestSshdRunningMacos:
 class TestCheckReadinessDispatch:
     def test_dispatches_to_linux(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", False),
-            patch("control_station_lite.agent.cli.IS_MACOS", False),
-            patch("control_station_lite.agent.cli.IS_LINUX", True),
-            patch("control_station_lite.agent.cli._check_readiness_linux", return_value=[]) as mock,
+            patch("control_station_lite.agent.cli.cmd_setup.IS_WINDOWS", False),
+            patch("control_station_lite.agent.cli.cmd_setup.IS_MACOS", False),
+            patch("control_station_lite.agent.cli.cmd_setup.IS_LINUX", True),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._check_readiness_linux", return_value=[]
+            ) as mock,
         ):
             check_readiness()
         mock.assert_called_once()
 
     def test_dispatches_to_windows(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", True),
+            patch("control_station_lite.agent.cli.cmd_setup.IS_WINDOWS", True),
             patch(
-                "control_station_lite.agent.cli._check_readiness_windows", return_value=[]
+                "control_station_lite.agent.cli.cmd_setup._check_readiness_windows", return_value=[]
             ) as mock,
         ):
             check_readiness()
@@ -699,9 +741,11 @@ class TestCheckReadinessDispatch:
 
     def test_dispatches_to_macos(self) -> None:
         with (
-            patch("control_station_lite.agent.cli.IS_WINDOWS", False),
-            patch("control_station_lite.agent.cli.IS_MACOS", True),
-            patch("control_station_lite.agent.cli._check_readiness_macos", return_value=[]) as mock,
+            patch("control_station_lite.agent.cli.cmd_setup.IS_WINDOWS", False),
+            patch("control_station_lite.agent.cli.cmd_setup.IS_MACOS", True),
+            patch(
+                "control_station_lite.agent.cli.cmd_setup._check_readiness_macos", return_value=[]
+            ) as mock,
         ):
             check_readiness()
         mock.assert_called_once()
@@ -717,14 +761,14 @@ class TestCmdInitReadinessIntegration:
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
             patch(
-                "control_station_lite.agent.cli.CslPaths.platform_base",
+                "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
                 return_value=tmp_path / ".csl",
             ),
             patch(
-                "control_station_lite.agent.cli.default_config_path",
+                "control_station_lite.agent.cli.cmd_init.default_config_path",
                 return_value=tmp_path / ".csl" / "config.yaml",
             ),
-            patch("control_station_lite.agent.cli.install_service"),
+            patch("control_station_lite.agent.cli.cmd_init.install_service"),
             patch("sys.argv", ["csl-agent", "init"]),
         ):
             main()
@@ -734,10 +778,8 @@ class TestCmdInitReadinessIntegration:
         tmp_path: Path,
         capsys: pytest.CaptureFixture,  # type: ignore[type-arg]
     ) -> None:
-        from control_station_lite.agent.cli import ReadinessIssue
-
         with patch(
-            "control_station_lite.agent.cli.check_readiness",
+            "control_station_lite.agent.cli.cmd_init.check_readiness",
             return_value=[
                 ReadinessIssue(
                     "warning", "SSH daemon is not running.", "sudo systemctl enable --now ssh"
@@ -755,10 +797,8 @@ class TestCmdInitReadinessIntegration:
         tmp_path: Path,
         capsys: pytest.CaptureFixture,  # type: ignore[type-arg]
     ) -> None:
-        from control_station_lite.agent.cli import ReadinessIssue
-
         with patch(
-            "control_station_lite.agent.cli.check_readiness",
+            "control_station_lite.agent.cli.cmd_init.check_readiness",
             return_value=[
                 ReadinessIssue("error", "sshd not installed.", "sudo apt install openssh-server")
             ],
@@ -774,10 +814,8 @@ class TestCmdInitReadinessIntegration:
         tmp_path: Path,
         capsys: pytest.CaptureFixture,  # type: ignore[type-arg]
     ) -> None:
-        from control_station_lite.agent.cli import ReadinessIssue
-
         with patch(
-            "control_station_lite.agent.cli.check_readiness",
+            "control_station_lite.agent.cli.cmd_init.check_readiness",
             return_value=[ReadinessIssue("error", "sshd not installed.", "install hint")],
         ):
             self._run_init(tmp_path)  # must not raise or sys.exit
@@ -799,36 +837,32 @@ class TestCmdSetup:
         self,
         capsys: pytest.CaptureFixture,  # type: ignore[type-arg]
     ) -> None:
-        with patch("control_station_lite.agent.cli.check_readiness", return_value=[]):
+        with patch("control_station_lite.agent.cli.cmd_setup.check_readiness", return_value=[]):
             self._run_setup()
         assert "all prerequisite checks passed" in capsys.readouterr().out.lower()
 
     def test_setup_runs_setup_system_when_issues_exist(self) -> None:
-        from control_station_lite.agent.cli import ReadinessIssue
-
         with (
             patch(
-                "control_station_lite.agent.cli.check_readiness",
+                "control_station_lite.agent.cli.cmd_setup.check_readiness",
                 side_effect=[
                     [ReadinessIssue("warning", "sshd not running", "fix hint")],
                     [],  # re-check after fix: all clear
                 ],
             ),
-            patch("control_station_lite.agent.cli.setup_system") as mock_setup,
+            patch("control_station_lite.agent.cli.cmd_setup.setup_system") as mock_setup,
         ):
             self._run_setup()
         mock_setup.assert_called_once()
 
     def test_setup_exits_1_when_issues_remain(self) -> None:
-        from control_station_lite.agent.cli import ReadinessIssue
-
         issue = ReadinessIssue("error", "sshd not installed", "install it")
         with (
             patch(
-                "control_station_lite.agent.cli.check_readiness",
+                "control_station_lite.agent.cli.cmd_setup.check_readiness",
                 side_effect=[[issue], [issue]],  # still broken after fix attempt
             ),
-            patch("control_station_lite.agent.cli.setup_system"),
+            patch("control_station_lite.agent.cli.cmd_setup.setup_system"),
             pytest.raises(SystemExit) as exc_info,
         ):
             self._run_setup()

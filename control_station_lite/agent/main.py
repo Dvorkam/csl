@@ -69,7 +69,12 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         _AGENT_HOST,
         cfg.agent.listen_port,
     )
-    shutdown_task = asyncio.create_task(tracker.run_loop(process_mgr))
+    shutdown_task = asyncio.create_task(
+        tracker.run_loop(
+            process_mgr,
+            check_interval=cfg.agent.lifecycle_check_interval_seconds,
+        )
+    )
     try:
         yield
     finally:
@@ -154,7 +159,7 @@ async def submit_job(body: JobRequest) -> JobStatusResponse:
 async def stream_job_logs(
     job_uuid: str,
     request: Request,
-    tail: int = 1000,
+    tail: int | None = None,
 ) -> StreamingResponse:
     """Stream stdout/stderr from a persistent job as SSE events.
 
@@ -165,6 +170,8 @@ async def stream_job_logs(
     (default 1 000).  Pass ``tail=-1`` to replay the entire log, or
     ``tail=0`` to receive only live output.
     """
+    cfg: AgentConfig = request.app.state.config
+    effective_tail = tail if tail is not None else cfg.agent.log_tail_lines
     pm: ProcessManager = request.app.state.process_manager
     try:
         log_path = pm.get_log_path(job_uuid)
@@ -180,7 +187,7 @@ async def stream_job_logs(
         except JobNotFoundError:
             return True
 
-    return make_sse_response(log_path, is_done=_is_done, tail_lines=tail)
+    return make_sse_response(log_path, is_done=_is_done, tail_lines=effective_tail)
 
 
 def main() -> None:

@@ -18,7 +18,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from control_station_lite.agent.cli import (  # noqa: E402
+from control_station_lite.agent.cli.cmd_init import (  # noqa: E402
     _append_authorized_keys,
     _generate_keypair,
     _ssh_fingerprint,
