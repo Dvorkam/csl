@@ -40,6 +40,33 @@ The project used a temporary feature branch as base during bootstrapping; that i
 
 Coverage target: **85% line coverage** on `control_station_lite/`, enforced in CI. Exclusions documented in `pyproject.toml`.
 
+### Manual tests
+
+Write a manual test (under `tests/manual/<platform>/<feature>.py`) for behaviour that requires real system state that CI cannot provide: running OS services (sshd, systemd, Task Scheduler), real file-system permissions and ACLs, interactive prompts, or platform-specific binaries.
+
+Rules:
+- Import from the correct **submodule**, not the package root (e.g. `from agent.cli.cmd_setup import …`, not `from agent.cli import …`).
+- Patch paths must use the full dotted path to where the name is **used** (same rule as unit tests).
+- Use the standard pattern: `_results: list[bool]`, coloured `ok()` / `fail()` / `info()`, `section()` headers, final `Results: N/M passed` summary, `sys.exit(0 if passed == total else 1)`.
+- Run with `uv run tests/manual/…` — must exit 0 on a correctly configured machine.
+- When a module is refactored into a package, update all manual test imports in the same commit.
+
+---
+
+---
+
+## README
+
+Update `README.md` when:
+- A user-visible feature ships (new command, new install step, new platform support).
+- The quickstart changes in any way — re-read it literally after editing to verify it still works.
+- A development phase completes (e.g. control station goes alpha).
+
+Rules:
+- README describes what works **now**. Planned features go in a clearly labelled "Coming soon" or roadmap section.
+- The Status table near the top must reflect actual component readiness at the time of the commit.
+- Never describe a feature in present tense ("You can…") if it requires a component that is not yet shipped.
+
 ---
 
 ## Non-Python artifact validation

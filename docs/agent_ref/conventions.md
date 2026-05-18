@@ -39,6 +39,35 @@ the server and agent configure their own handlers at startup; modules just emit 
   and a test that compares it against the OpenAPI schema exactly. Adding an endpoint without
   updating this set must cause a test failure.
 
+## Configuration (config.yaml)
+
+**What belongs in config vs hardcoded:**
+- User-settable values (timeouts, ports, paths that vary by machine setup) → `config.yaml`.
+- Platform installation constants (where software is installed, e.g. `sshd.exe` location) → module constant in source code. These almost never vary; making them configurable adds surface area without real benefit.
+
+**Checklist for every new config field:**
+1. Add the field to the appropriate `*Section` Pydantic model in `agent/config.py` with a default.
+2. If it's a `Path`: add `expanduser()` in the section's `_expand_paths` model validator.
+3. Update `_write_config()` in `cli/cmd_init.py` so `csl-agent init` writes the default into new config files.
+4. Update the `config.yaml` example in `docs/ARCHITECTURE.md` §6.2.
+5. Add a test in `tests/unit/agent/test_config.py` asserting the default value.
+
+**Data flow rule:** Command handlers (`cmd_init`, `cmd_setup`, …) call `load_config()` once at entry and pass the result down. Helper functions must not call `load_config()` internally — that hides dependencies and creates bootstrap ordering surprises.
+
+**Caching:** Use `get_config()` (LRU-cached) in long-running server code. Use `load_config(path)` in one-shot CLI commands and all tests.
+
+**Bootstrap note:** On first run there is no config file yet. `load_config()` returns pure code defaults in that case — that is correct and expected. Document this if it affects a feature.
+
+## File size and refactoring
+
+Refactor a module into a package when it exceeds ~400 lines **and** handles more than one distinct responsibility.
+
+Rules when splitting:
+- Split by responsibility, not by size alone.
+- The new `__init__.py` exports only the public interface — never add re-exports just to avoid updating test imports. Fix the imports instead.
+- After splitting: update all `import` and `patch()` paths in **tests and manual scripts**. Patch paths must point to the module where the name is **used**, not where it was originally defined.
+- Manual test import paths break silently (import errors only surface at runtime) — update them immediately.
+
 ## Architecture constraints
 
 - `server/main.py` wires routers only — no endpoints defined directly in `main.py`. Each API module owns its router.

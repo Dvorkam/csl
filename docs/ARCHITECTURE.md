@@ -459,8 +459,10 @@ control_station_lite/
 
 ```yaml
 agent:
-  listen_port: 47731
-  idle_timeout_seconds: 600  # 10 minutes; override to tune spin-down behaviour
+  listen_port: 36717
+  idle_timeout_seconds: 600          # 10 minutes; tune spin-down behaviour
+  lifecycle_check_interval_seconds: 10  # how often the idle-shutdown loop wakes
+  log_tail_lines: 1000               # default lines replayed on SSE reconnect
   scripts_dir: ~/.csl/scripts
   pending_dir: ~/.csl/scripts.pending
   logs_dir: ~/.csl/logs
@@ -475,6 +477,10 @@ approval_policy:
   # Scripts in this list are auto-approved for both first install and updates.
   # Empty by default. Add entries via `csl-agent policy auto-approve <name>`.
   auto_approve: []
+
+advanced:
+  # Windows only: path to the authorized_keys file for Administrator accounts.
+  windows_admin_authorized_keys_path: C:/ProgramData/ssh/administrators_authorized_keys
 ```
 
 `approvals.json` schema:

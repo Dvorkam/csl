@@ -18,13 +18,14 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from control_station_lite.agent.cli import (  # noqa: E402
+from control_station_lite.agent.cli.cmd_setup import (  # noqa: E402
     _check_readiness_windows,
     _sshd_exe_windows,
     _sshd_running_windows,
     _windows_is_admin,
     check_readiness,
 )
+from control_station_lite.agent.config import load_config  # noqa: E402
 from control_station_lite.shared.platform_info import IS_WINDOWS  # noqa: E402
 
 _GREEN = "\033[32m"
@@ -71,9 +72,11 @@ if not IS_WINDOWS:
 # 0. Admin status
 section("0. Running context")
 is_admin = _windows_is_admin()
+_cfg = load_config()
 info(f"Running as Administrator: {is_admin}")
 if is_admin:
-    info("authorized_keys will go to C:\\ProgramData\\ssh\\administrators_authorized_keys")
+    ak_path = _cfg.advanced.windows_admin_authorized_keys_path
+    info(f"authorized_keys will go to {ak_path}")
 else:
     info("authorized_keys will go to %USERPROFILE%\\.ssh\\authorized_keys")
 
@@ -102,18 +105,17 @@ else:
         "Start with: sc start sshd\n  To set automatic: sc config sshd start= auto",
     )
 
-# 3. C:\ProgramData\ssh\ (only relevant for admin)
+# 3. admin authorized_keys directory (only relevant for admin)
 if is_admin:
-    section("3. C:\\ProgramData\\ssh\\ (admin-account prerequisite)")
-    admin_ssh = Path("C:/ProgramData/ssh")
+    admin_ak = _cfg.advanced.windows_admin_authorized_keys_path
+    admin_ssh = admin_ak.parent
+    section(f"3. {admin_ssh} (admin-account prerequisite)")
     if admin_ssh.exists():
         ok(f"{admin_ssh} exists")
-        # Check administrators_authorized_keys if present
-        admin_ak = admin_ssh / "administrators_authorized_keys"
         if admin_ak.exists():
-            info(f"administrators_authorized_keys already exists ({admin_ak.stat().st_size} bytes)")
+            info(f"{admin_ak.name} already exists ({admin_ak.stat().st_size} bytes)")
         else:
-            info("administrators_authorized_keys does not exist yet — will be created by init")
+            info(f"{admin_ak.name} does not exist yet — will be created by init")
     else:
         fail(
             f"{admin_ssh} does not exist",
@@ -150,7 +152,8 @@ else:
 # 5. fix_hint content sanity
 section("5. fix_hint content")
 with mock.patch(
-    "control_station_lite.agent.cli._sshd_exe_windows", return_value=Path("C:/nonexistent/sshd.exe")
+    "control_station_lite.agent.cli.cmd_setup._sshd_exe_windows",
+    return_value=Path("C:/nonexistent/sshd.exe"),
 ):
     missing_issues = _check_readiness_windows()
 if missing_issues and "Add-WindowsCapability" in missing_issues[0].fix_hint:

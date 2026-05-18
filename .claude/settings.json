@@ -10,10 +10,14 @@
       "Bash(gh pr *)",
       "Bash(gh run *)",
       "Bash(git push *)",
-      "Bash(python tests/manual/linux/check_authorized_keys.py)"
+      "Bash(python tests/manual/linux/check_authorized_keys.py)",
+      "Bash(mkdir -p /home/dvorkam/repos/csl/control_station_lite/*)",
+      "Bash(cat /home/dvorkam/.config/systemd/user/csl-agent.service)",
+      "Read(//home/dvorkam/.config/systemd/user/**)"
     ],
     "additionalDirectories": [
-      "/home/dvorkam/repos/csl/docs"
+      "/home/dvorkam/repos/csl/docs",
+      "/home/dvorkam/repos/csl/control_station_lite/agent"
     ]
   }
 }

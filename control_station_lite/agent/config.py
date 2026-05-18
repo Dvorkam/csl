@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from pathlib import Path
 
@@ -21,12 +22,14 @@ from control_station_lite.agent.paths import CslPaths
 from control_station_lite.shared._validation import validate_stripping_unknowns
 
 __all__ = [
+    "AdvancedSection",
     "AgentConfig",
     "AgentSection",
     "ApprovalPolicySection",
     "ConfigError",
     "IdentitySection",
     "default_config_path",
+    "get_config",
     "load_config",
 ]
 
@@ -58,6 +61,8 @@ class AgentSection(BaseModel):
     approvals_path: Path = Field(
         default_factory=lambda: CslPaths.platform_base() / "agent" / "approvals.json"
     )
+    lifecycle_check_interval_seconds: int = 10
+    log_tail_lines: int = 1000
 
     @model_validator(mode="before")
     @classmethod
@@ -115,12 +120,28 @@ class ApprovalPolicySection(BaseModel):
     auto_approve: list[str] = Field(default_factory=list)
 
 
+class AdvancedSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    windows_admin_authorized_keys_path: Path = Path(
+        "C:/ProgramData/ssh/administrators_authorized_keys"
+    )
+
+    @model_validator(mode="after")
+    def _expand_paths(self) -> AdvancedSection:
+        self.windows_admin_authorized_keys_path = (
+            self.windows_admin_authorized_keys_path.expanduser()
+        )
+        return self
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent: AgentSection = Field(default_factory=AgentSection)
     identity: IdentitySection = Field(default_factory=IdentitySection)
     approval_policy: ApprovalPolicySection = Field(default_factory=ApprovalPolicySection)
+    advanced: AdvancedSection = Field(default_factory=AdvancedSection)
 
 
 def load_config(path: Path | None = None) -> AgentConfig:
@@ -158,3 +179,14 @@ def load_config(path: Path | None = None) -> AgentConfig:
         )
     except Exception as exc:
         raise ConfigError(str(exc)) from exc
+
+
+@functools.lru_cache(maxsize=1)
+def get_config() -> AgentConfig:
+    """Return the process-level singleton AgentConfig (cached after first call).
+
+    Use this in long-running code (server, loops).  Tests and one-shot CLI
+    commands should call ``load_config(path)`` directly to avoid cache
+    interactions.
+    """
+    return load_config()

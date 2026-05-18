@@ -20,13 +20,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from control_station_lite.agent.cli import (  # noqa: E402
-    _WINDOWS_ADMIN_AK_PATH,
+from control_station_lite.agent.cli.cmd_init import (  # noqa: E402
     _append_authorized_keys,
     _generate_keypair,
     _ssh_fingerprint,
-    _windows_is_admin,
 )
+from control_station_lite.agent.cli.cmd_setup import _windows_is_admin  # noqa: E402
+from control_station_lite.agent.config import load_config  # noqa: E402
 from control_station_lite.shared.platform_info import IS_WINDOWS  # noqa: E402
 
 _GREEN = "\033[32m"
@@ -73,8 +73,10 @@ if not IS_WINDOWS:
     sys.exit(1)
 
 is_admin = _windows_is_admin()
+_cfg = load_config()
 info(f"Running as Administrator: {is_admin}")
-expected_path = _WINDOWS_ADMIN_AK_PATH if is_admin else Path.home() / ".ssh" / "authorized_keys"
+admin_ak_path = _cfg.advanced.windows_admin_authorized_keys_path
+expected_path = admin_ak_path if is_admin else Path.home() / ".ssh" / "authorized_keys"
 info(f"Expected authorized_keys path: {expected_path}")
 
 # 1. Generate a test keypair
@@ -122,8 +124,8 @@ with tempfile.TemporaryDirectory() as tmp:
         else:
             ok("key was NOT written to user path (admin path only)")
     else:
-        if _WINDOWS_ADMIN_AK_PATH.exists():
-            admin_content = _WINDOWS_ADMIN_AK_PATH.read_text(encoding="utf-8", errors="ignore")
+        if admin_ak_path.exists():
+            admin_content = admin_ak_path.read_text(encoding="utf-8", errors="ignore")
             if pub_line in admin_content:
                 fail("key was written to admin path (user is not admin)")
             else:
@@ -144,7 +146,7 @@ with tempfile.TemporaryDirectory() as tmp:
     if is_admin:
         section("4. ACL on administrators_authorized_keys")
         icacls = subprocess.run(
-            ["icacls", str(_WINDOWS_ADMIN_AK_PATH)],
+            ["icacls", str(admin_ak_path)],
             capture_output=True,
             text=True,
         )

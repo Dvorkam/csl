@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from control_station_lite.agent.cli import (  # noqa: E402
+from control_station_lite.agent.cli.cmd_setup import (  # noqa: E402
     _check_readiness_linux,
     _sshd_running_linux,
     check_readiness,
@@ -119,7 +119,7 @@ dummy_issues = (
 # Directly verify a known broken state by faking the conditions
 import unittest.mock as mock  # noqa: E402
 
-with mock.patch("control_station_lite.agent.cli.shutil.which", return_value=None):
+with mock.patch("control_station_lite.agent.cli.cmd_setup.shutil.which", return_value=None):
     missing_issues = _check_readiness_linux()
 if missing_issues and "apt" in missing_issues[0].fix_hint and "dnf" in missing_issues[0].fix_hint:
     ok("fix_hint for missing sshd mentions apt and dnf")
@@ -130,8 +130,10 @@ else:
     )
 
 with (
-    mock.patch("control_station_lite.agent.cli.shutil.which", return_value="/usr/sbin/sshd"),
-    mock.patch("control_station_lite.agent.cli._sshd_running_linux", return_value=False),
+    mock.patch(
+        "control_station_lite.agent.cli.cmd_setup.shutil.which", return_value="/usr/sbin/sshd"
+    ),
+    mock.patch("control_station_lite.agent.cli.cmd_setup._sshd_running_linux", return_value=False),
 ):
     stopped_issues = _check_readiness_linux()
 if stopped_issues and "systemctl" in stopped_issues[0].fix_hint:
