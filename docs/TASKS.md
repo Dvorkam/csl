@@ -46,7 +46,7 @@ The agent is testable in isolation (no control station needed). Build it first t
 - [x] **1.13** Implement `csl-agent approvals` subcommands: `list`, `show <name>`, `diff <name>`, `approve <name>`, `reject <name>`, `clear <name>`.
 - [x] **1.14** Implement `csl-agent policy` subcommands: `auto-approve <name>`, `manual <name>`, `show`.
 - [x] **1.15** Cross-platform tests for `csl-agent init`, service installation, and approval CLI flows (Linux, Windows). Verify Windows path handling, line endings, and `authorized_keys` permissions where applicable.
-- [ ] **1.16** Test: end-to-end approval flow without the control station — stage a script via direct API call to a locally-running agent, list pending, approve, run.
+- [x] **1.16** Test: end-to-end approval flow without the control station — stage a script via direct API call to a locally-running agent, list pending, approve, run.
 
 ---
 

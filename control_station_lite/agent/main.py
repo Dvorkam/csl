@@ -16,16 +16,22 @@ import importlib.metadata
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from control_station_lite.agent.approvals import ApprovalsManager
+from control_station_lite.agent.approvals import ApprovalError, ApprovalsManager
 from control_station_lite.agent.config import AgentConfig, load_config
 from control_station_lite.agent.lifecycle import IdleTracker
 from control_station_lite.agent.log_stream import make_sse_response
 from control_station_lite.agent.process_manager import JobNotFoundError, ProcessManager
+from control_station_lite.agent.script_runner import (
+    ScriptNotApprovedError,
+    ScriptNotFoundError,
+    run_script,
+)
 from control_station_lite.shared.models import (
     AgentHealth,
     JobRequest,
@@ -43,8 +49,6 @@ logger = logging.getLogger(__name__)
 # The agent must only bind to localhost — it communicates exclusively through
 # SSH tunnels and must never be reachable from the network directly.
 _AGENT_HOST = "127.0.0.1"
-
-_NOT_IMPLEMENTED: dict[int | str, dict[str, object]] = {501: {"description": "Not yet implemented"}}
 
 
 @asynccontextmanager
@@ -124,35 +128,58 @@ async def healthz(request: Request) -> AgentHealth:
     )
 
 
-@app.get(
-    "/scripts/{name}/state",
-    response_model=ScriptDescriptor,
-    responses=_NOT_IMPLEMENTED,
-)
-async def get_script_state(name: str) -> ScriptDescriptor:
+@app.get("/scripts/{name}/state", response_model=ScriptDescriptor)
+async def get_script_state(name: str, request: Request) -> ScriptDescriptor:
     """Return the current approval state of a script on this agent."""
-    raise HTTPException(status_code=501, detail="approvals not yet implemented")
+    approvals: ApprovalsManager = request.app.state.approvals
+    return approvals.get_state(name)
 
 
-@app.post(
-    "/scripts/{name}/stage",
-    response_model=StageScriptResponse,
-    responses=_NOT_IMPLEMENTED,
-)
-async def stage_script(name: str, body: StageScriptRequest) -> StageScriptResponse:
+@app.post("/scripts/{name}/stage", response_model=StageScriptResponse)
+async def stage_script(
+    name: str, body: StageScriptRequest, request: Request
+) -> StageScriptResponse:
     """Stage a script for target-owner review."""
-    raise HTTPException(status_code=501, detail="approvals not yet implemented")
+    approvals: ApprovalsManager = request.app.state.approvals
+    try:
+        new_state = approvals.stage(name, body.content, body.md5, body.meta_yaml)
+    except ApprovalError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return StageScriptResponse(name=name, state=new_state)
 
 
-@app.post(
-    "/jobs",
-    response_model=JobStatusResponse,
-    status_code=202,
-    responses=_NOT_IMPLEMENTED,
-)
-async def submit_job(body: JobRequest) -> JobStatusResponse:
+@app.post("/jobs", response_model=JobStatusResponse, status_code=202)
+async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
     """Submit a job for execution (script must already be approved)."""
-    raise HTTPException(status_code=501, detail="job execution not yet implemented")
+    approvals: ApprovalsManager = request.app.state.approvals
+    pm: ProcessManager = request.app.state.process_manager
+    cfg: AgentConfig = request.app.state.config
+
+    if body.persistent:
+        try:
+            return pm.start(body.script_name, body.params, body.job_uuid)
+        except ScriptNotApprovedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ScriptNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    started_at = datetime.now(UTC)
+    try:
+        result = run_script(body.script_name, body.params, approvals, cfg.agent.scripts_dir)
+    except ScriptNotApprovedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ScriptNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return JobStatusResponse(
+        job_uuid=body.job_uuid,
+        script_name=body.script_name,
+        status=JobStatus.completed if result.exit_code == 0 else JobStatus.failed,
+        persistent=False,
+        started_at=started_at,
+        ended_at=datetime.now(UTC),
+        exit_code=result.exit_code,
+    )
 
 
 @app.get("/jobs/{job_uuid}/stream", response_class=StreamingResponse)

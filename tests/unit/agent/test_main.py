@@ -1,6 +1,11 @@
+import hashlib
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
+from control_station_lite.agent.config import AgentConfig, AgentSection
 from control_station_lite.agent.main import _AGENT_HOST, app
 
 
@@ -35,23 +40,55 @@ class TestHealthz:
         assert isinstance(healthz_data["idle_seconds"], float | int)
 
 
-class TestStubEndpoints:
-    def test_get_script_state_returns_501(self, client: TestClient) -> None:
-        assert client.get("/scripts/sleep_machine/state").status_code == 501
+@pytest.fixture
+def isolated_client(tmp_path: Path) -> TestClient:
+    """Function-scoped client with isolated filesystem — no real ~/.csl side effects."""
+    cfg = AgentConfig(agent=AgentSection(csl_dir=tmp_path / ".csl"))
+    with patch("control_station_lite.agent.main.load_config", return_value=cfg):
+        with TestClient(app) as c:
+            yield c
 
-    def test_stage_script_returns_501(self, client: TestClient) -> None:
-        response = client.post(
-            "/scripts/sleep_machine/stage",
-            json={"content": "#!/bin/bash\necho hi", "md5": "deadbeef"},
+
+class TestScriptStateEndpoint:
+    def test_absent_for_unknown_script(self, isolated_client: TestClient) -> None:
+        resp = isolated_client.get("/scripts/no_such_script/state")
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "absent"
+
+    def test_pending_after_stage(self, isolated_client: TestClient) -> None:
+        content = "#!/bin/bash\necho hi\n"
+        md5 = hashlib.md5(content.encode()).hexdigest()
+        isolated_client.post("/scripts/greet/stage", json={"content": content, "md5": md5})
+        resp = isolated_client.get("/scripts/greet/state")
+        assert resp.json()["state"] == "pending"
+
+
+class TestStageEndpoint:
+    def test_returns_pending_for_new_script(self, isolated_client: TestClient) -> None:
+        content = "#!/bin/bash\necho hi\n"
+        md5 = hashlib.md5(content.encode()).hexdigest()
+        resp = isolated_client.post(
+            "/scripts/myscript/stage", json={"content": content, "md5": md5}
         )
-        assert response.status_code == 501
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "pending"
 
-    def test_submit_job_returns_501(self, client: TestClient) -> None:
-        response = client.post(
+    def test_returns_409_when_rejected(self, isolated_client: TestClient) -> None:
+        content = "#!/bin/bash\necho hi\n"
+        md5 = hashlib.md5(content.encode()).hexdigest()
+        isolated_client.post("/scripts/bad/stage", json={"content": content, "md5": md5})
+        isolated_client.app.state.approvals.reject("bad")
+        resp = isolated_client.post("/scripts/bad/stage", json={"content": content, "md5": md5})
+        assert resp.status_code == 409
+
+
+class TestSubmitJobEndpoint:
+    def test_returns_403_when_unapproved(self, isolated_client: TestClient) -> None:
+        resp = isolated_client.post(
             "/jobs",
-            json={"job_uuid": "abc-123", "script_name": "sleep_machine"},
+            json={"job_uuid": "abc-123", "script_name": "not_approved"},
         )
-        assert response.status_code == 501
+        assert resp.status_code == 403
 
 
 class TestStreamJobLogs:
