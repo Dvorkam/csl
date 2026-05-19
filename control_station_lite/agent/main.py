@@ -17,8 +17,9 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Path, Request, Response
 from fastapi.responses import StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
@@ -128,8 +129,11 @@ async def healthz(request: Request) -> AgentHealth:
     )
 
 
+_SAFE_NAME = Path(pattern=r"^[A-Za-z0-9_\-.]+$")
+
+
 @app.get("/scripts/{name}/state", response_model=ScriptDescriptor)
-async def get_script_state(name: str, request: Request) -> ScriptDescriptor:
+async def get_script_state(name: Annotated[str, _SAFE_NAME], request: Request) -> ScriptDescriptor:
     """Return the current approval state of a script on this agent."""
     approvals: ApprovalsManager = request.app.state.approvals
     return approvals.get_state(name)
@@ -137,7 +141,7 @@ async def get_script_state(name: str, request: Request) -> ScriptDescriptor:
 
 @app.post("/scripts/{name}/stage", response_model=StageScriptResponse)
 async def stage_script(
-    name: str, body: StageScriptRequest, request: Request
+    name: Annotated[str, _SAFE_NAME], body: StageScriptRequest, request: Request
 ) -> StageScriptResponse:
     """Stage a script for target-owner review."""
     approvals: ApprovalsManager = request.app.state.approvals
