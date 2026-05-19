@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 1.16** — End-to-end approval flow test without the control station.
+**Task 2.1** — `server/config.py` (pydantic-settings).
 
 ## Up next
 
-**Task 2.1** — `server/config.py` (pydantic-settings).
+**Task 2.2** — `server/db/models.py` per §5.1.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 1.16 | Implemented `GET /scripts/{name}/state`, `POST /scripts/{name}/stage`, `POST /jobs` (one-off + persistent); 6 e2e tests (stage→pending→approve→run, update_pending blocks, auto-approve), 5 new unit tests replacing 501 stubs | `feature/task-1.15-cross-platform-tests` |
 | 1.15 | Cross-platform tests: `authorized_keys` permission bits (linux_only), CRLF-safe idempotency, Windows-simulated config paths and service-installer dispatch, multi-step approval CLI flow integration tests (absent→pending→approved→absent, update flow, policy add/remove); 27 new tests | `feature/task-1.15-cross-platform-tests` |
 | (config) | Integrate hardcoded constants into `config.yaml`: added `lifecycle_check_interval_seconds` (default 10s), `log_tail_lines` (default 1000), and new `advanced` section with `windows_admin_authorized_keys_path`; wired into `main.py` and `cmd_init.py`; 5 new config tests | `feature/task-1.13-approvals-cli` |
 | (refactor) | Refactored 971-line `agent/cli.py` into `agent/cli/` package: `_main.py`, `cmd_init.py`, `cmd_setup.py`, `cmd_approvals.py`, `cmd_policy.py`; clean one-way dependency graph; default port changed to 36717 | `feature/task-1.13-approvals-cli` |
