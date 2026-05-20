@@ -9,3 +9,20 @@
 # (at your option) any later version, with an additional permission for
 # distribution through app stores (see LICENSE).
 
+from collections.abc import AsyncGenerator
+from functools import lru_cache
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from control_station_lite.server.config import get_settings
+
+
+@lru_cache(maxsize=1)
+def _session_factory() -> async_sessionmaker[AsyncSession]:
+    engine = create_async_engine(get_settings().database_url, echo=False)
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    async with _session_factory()() as session:
+        yield session

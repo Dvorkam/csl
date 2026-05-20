@@ -52,8 +52,8 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 ## Phase 2 — Control station foundation
 
-- [ ] **2.1** Implement `server/config.py` (pydantic-settings): load from env / file. Fail loudly if required secrets are missing.
-- [ ] **2.2** Implement `server/db/models.py` per §5.1.
+- [x] **2.1** Implement `server/config.py` (pydantic-settings): load from env / file. Fail loudly if required secrets are missing.
+- [x] **2.2** Implement `server/db/models.py` per §5.1.
 - [ ] **2.3** Set up Alembic; generate initial migration matching the models.
 - [ ] **2.4** Implement `server/main.py` FastAPI app skeleton with `/healthz`.
 - [ ] **2.5** Implement `server/core/crypto.py`: AES-256-GCM encrypt/decrypt using master key. Per-record nonce, stored alongside ciphertext.

@@ -7,16 +7,18 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 2.1** — `server/config.py` (pydantic-settings).
+**Task 2.3** — Set up Alembic; generate initial migration matching the models.
 
 ## Up next
 
-**Task 2.2** — `server/db/models.py` per §5.1.
+**Task 2.4** — `server/main.py` FastAPI skeleton with `/healthz` + `_EXPECTED_ENDPOINTS`.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 2.2 | `server/db/models.py`: 8 SQLAlchemy ORM models (`User`, `RefreshToken`, `Machine`, `UserMachine`, `Script`, `ScriptTargetState`, `Job`, `AuditLog`) matching §5.1 exactly; nullable columns inferred from `Mapped[X | None]`; `LargeBinary` for encrypted SSH key; `session.py` with `_session_factory()` (lru_cached, lazy) and `get_session()` async generator; 30 model tests (structural + round-trip on in-memory SQLite) + 3 session tests | branch `main` |
+| 2.1 | `server/config.py`: pydantic-settings `Settings` class; `CSL_` env prefix; validates `master_key_path` (exists, valid base64, exactly 32 bytes), `jwt_key_path` (exists, non-empty), `log_level` (normalised to uppercase); `read_master_key()`/`read_jwt_key()` helpers; `get_settings()` with `@lru_cache`; dev key files in `secrets/`; 24 unit tests | branch `main` |
 | 1.16 | Implemented `GET /scripts/{name}/state`, `POST /scripts/{name}/stage`, `POST /jobs` (one-off + persistent); 6 e2e tests (stage→pending→approve→run, update_pending blocks, auto-approve), 5 new unit tests replacing 501 stubs | `feature/task-1.15-cross-platform-tests` |
 | 1.15 | Cross-platform tests: `authorized_keys` permission bits (linux_only), CRLF-safe idempotency, Windows-simulated config paths and service-installer dispatch, multi-step approval CLI flow integration tests (absent→pending→approved→absent, update flow, policy add/remove); 27 new tests | `feature/task-1.15-cross-platform-tests` |
 | (config) | Integrate hardcoded constants into `config.yaml`: added `lifecycle_check_interval_seconds` (default 10s), `log_tail_lines` (default 1000), and new `advanced` section with `windows_admin_authorized_keys_path`; wired into `main.py` and `cmd_init.py`; 5 new config tests | `feature/task-1.13-approvals-cli` |
