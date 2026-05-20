@@ -1,15 +1,16 @@
 name: E2E
 
+# Runs on every PR so e2e failures are caught before merge, not after.
+#
+# REVISIT: if e2e wall-clock time regularly exceeds ~10 minutes, introduce a
+# `dev` staging branch — PRs target `dev` (CI only), and a `dev`→`main` PR
+# triggers the full suite as the release gate. See docs/agent_ref/workflow.md.
+
 on:
   pull_request:
-    types: [labeled]
-  push:
-    branches: [main]
 
 jobs:
   e2e:
-    # Run on merges to main, or when the 'e2e' label is added to a PR.
-    if: github.event_name == 'push' || github.event.label.name == 'e2e'
     runs-on: ubuntu-latest
 
     steps:
