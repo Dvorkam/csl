@@ -89,6 +89,6 @@ Rules:
 
 Workflows live in `.github/workflows/`:
 
-- **`ci.yml`** — every PR. Matrix: `{ubuntu-latest, windows-latest} × python-3.11`. Steps: install, lint, type-check, unit + contract + integration tests, coverage report.
-- **`e2e.yml`** — PR label `e2e` or merge to `main`. Builds Docker image, runs `tests/e2e/` with a real agent subprocess on the runner.
+- **`ci.yml`** — every PR (not on push to main — that would be redundant given branch protection). Matrix: `{ubuntu-latest, windows-latest} × python-3.11`. Steps: install, lint, type-check, unit + contract + integration tests, coverage report.
+- **`e2e.yml`** — every PR. Builds Docker image, runs `tests/e2e/` with a real agent subprocess on the runner. **REVISIT** if wall-clock time regularly exceeds ~10 minutes: at that point introduce a `dev` staging branch so PRs target `dev` (CI only) and a `dev`→`main` PR triggers the full suite as the release gate.
 - **`release.yml`** — deferred. Tag push → build/publish PyPI + Docker. Not in scope for v0.1.
