@@ -57,7 +57,7 @@ The agent is testable in isolation (no control station needed). Build it first t
 - [x] **2.3** Set up Alembic; generate initial migration matching the models.
 - [x] **2.4** Implement `server/main.py` FastAPI app skeleton with `/healthz`.
 - [x] **2.5** Implement `server/core/crypto.py`: AES-256-GCM encrypt/decrypt using master key. Per-record nonce, stored alongside ciphertext.
-- [ ] **2.6** Implement `server/core/ssh.py`: async SSH connection pool. Open connection, hold open for short keep-alive window, support local port forwarding. Built on `asyncssh`.
+- [x] **2.6** Implement `server/core/ssh.py`: async SSH connection pool. Open connection, hold open for short keep-alive window, support local port forwarding. Built on `asyncssh`.
 - [ ] **2.7** Implement `server/core/agent_client.py`: given a `Machine` record, ensure agent is running (issue platform-appropriate service-start command if `/healthz` does not respond, then poll with backoff), establish tunnel, expose a typed client (`get_health`, `get_script_state`, `stage_script`, `submit_job`, `kill_job`, `stream_logs`).
 
 ---
