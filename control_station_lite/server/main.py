@@ -23,6 +23,12 @@ from control_station_lite.server.api import (
     scripts,
 )
 
+# Every real endpoint must appear here. Adding an endpoint without updating
+# this set will cause test_expected_endpoints_matches_openapi to fail.
+_EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
+    ("GET", "/healthz"),
+}
+
 app = FastAPI(title="control-station-lite")
 
 app.include_router(health.router)
