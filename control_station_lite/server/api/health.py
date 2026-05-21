@@ -9,8 +9,8 @@
 # (at your option) any later version, with an additional permission for
 # distribution through app stores (see LICENSE).
 
-import importlib.metadata
 import functools
+import importlib.metadata
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     db: str
+
 
 @functools.lru_cache(maxsize=1)
 def _package_version() -> str:

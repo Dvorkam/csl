@@ -9,6 +9,10 @@ Tasks live in `docs/TASKS.md` and are numbered (e.g. `1.5`). For each task:
 3. Implement the change.
 4. Add tests per the testing rules below.
 5. Run `uv run pre-commit run --all-files`. Fix anything it finds.
+   **CRITICAL: always use `--all-files`, never `--files <specific-file>`.** Running
+   against specific files misses linter errors in other files you touched indirectly
+   (e.g. a file edited by another tool, or a generated file like an Alembic migration).
+   `--files` is only acceptable for a quick sanity check, never as the pre-commit gate.
 6. Run `uv run pytest`. All tests must pass.
 7. Commit. Message format: `<type>(<scope>): <summary> [Task N.M]`. Examples:
    - `feat(agent): implement approval state machine [Task 1.5]`
