@@ -10,6 +10,7 @@
 # distribution through app stores (see LICENSE).
 
 import importlib.metadata
+import functools
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ class HealthResponse(BaseModel):
     version: str
     db: str
 
-
+@functools.lru_cache(maxsize=1)
 def _package_version() -> str:
     try:
         return importlib.metadata.version("control-station-lite")
