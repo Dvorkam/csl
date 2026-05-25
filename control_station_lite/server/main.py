@@ -27,6 +27,9 @@ from control_station_lite.server.api import (
 # this set will cause test_expected_endpoints_matches_openapi to fail.
 _EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
     ("GET", "/healthz"),
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/refresh"),
+    ("POST", "/api/auth/logout"),
 }
 
 app = FastAPI(title="control-station-lite")
