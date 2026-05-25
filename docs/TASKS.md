@@ -64,13 +64,13 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 ## Phase 3 — Authentication and authorization
 
-- [ ] **3.1** Implement `server/auth/password.py`: bcrypt hash/verify with sane work factor.
-- [ ] **3.2** Implement `server/auth/jwt.py`: issue and verify access and refresh tokens per §7.1.
-- [ ] **3.3** Implement `server/auth/dependencies.py`: FastAPI dependencies `current_user`, `require_admin`.
-- [ ] **3.4** Implement `server/api/auth.py`: `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`. Refresh token issued as `HttpOnly Secure SameSite=Strict` cookie.
-- [ ] **3.5** Implement refresh-token revocation: on rotation, mark prior token revoked; on logout, mark current token revoked.
-- [ ] **3.6** CLI command to create an initial admin user (used by the bootstrap script).
-- [ ] **3.7** Integration tests covering: login, refresh, rotation, revocation, expired access token, expired refresh token, replay of revoked token.
+- [x] **3.1** Implement `server/auth/password.py`: bcrypt hash/verify with sane work factor.
+- [x] **3.2** Implement `server/auth/jwt.py`: issue and verify access and refresh tokens per §7.1.
+- [x] **3.3** Implement `server/auth/dependencies.py`: FastAPI dependencies `current_user`, `require_admin`.
+- [x] **3.4** Implement `server/api/auth.py`: `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`. Refresh token issued as `HttpOnly Secure SameSite=Strict` cookie.
+- [x] **3.5** Implement refresh-token revocation: on rotation, mark prior token revoked; on logout, mark current token revoked.
+- [x] **3.6** CLI command to create an initial admin user (used by the bootstrap script).
+- [x] **3.7** Integration tests covering: login, refresh, rotation, revocation, expired access token, expired refresh token, replay of revoked token.
 
 ---
 
