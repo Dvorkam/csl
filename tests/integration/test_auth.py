@@ -10,20 +10,18 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from control_station_lite.server.auth.password import hash_password, verify_password
 from control_station_lite.server.auth.jwt import (
     _ACCESS_TOKEN_EXPIRE_MINUTES,
-    _REFRESH_TOKEN_EXPIRE_DAYS,
     create_access_token,
     create_refresh_token,
     decode_access_token,
     decode_refresh_token,
 )
-from control_station_lite.server.db.models import Base, RefreshToken, User
-from control_station_lite.server.db.session import _session_factory, get_session
+from control_station_lite.server.auth.password import hash_password, verify_password
+from control_station_lite.server.db.models import Base, User
+from control_station_lite.server.db.session import get_session
 from control_station_lite.server.main import app
 
 # ---------------------------------------------------------------------------
@@ -43,7 +41,6 @@ def _jwt_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Reset lru_cache so settings re-read from patched env
     from control_station_lite.server.config import get_settings
-    from control_station_lite.server.auth import jwt as jwt_mod
 
     get_settings.cache_clear()
     # Clear jwt module's cached secret if any (it calls get_settings each time — no cache needed)
@@ -172,8 +169,8 @@ def test_tampered_access_token_rejected() -> None:
 
 def test_expired_access_token_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     from jose import JWTError
+
     import control_station_lite.server.auth.jwt as jwt_mod
-    from datetime import datetime, timezone
 
     # Patch timedelta to make token expire immediately
     original = jwt_mod.timedelta
@@ -195,7 +192,9 @@ def test_expired_access_token_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_login_success(client: TestClient, admin_user: User) -> None:
-    resp = client.post("/api/auth/login", json={"username": "admin", "password": "correct-password"})
+    resp = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "correct-password"}
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert "access_token" in body
@@ -249,6 +248,7 @@ def test_missing_token_blocks_protected_route(client: TestClient) -> None:
     # FastAPI HTTPBearer returns 403 when Authorization header is absent.
     # We test with a temp protected route rather than /healthz (which is public).
     from fastapi import Depends
+
     from control_station_lite.server.auth.dependencies import current_user
 
     @app.get("/test-protected-tmp")
@@ -296,9 +296,7 @@ def test_refresh_with_invalid_token_returns_401(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_old_refresh_token_rejected_after_rotation(
-    client: TestClient, admin_user: User
-) -> None:
+def test_old_refresh_token_rejected_after_rotation(client: TestClient, admin_user: User) -> None:
     client.post("/api/auth/login", json={"username": "admin", "password": "correct-password"})
     old_cookie = client.cookies.get("refresh_token")
 
@@ -343,6 +341,7 @@ def test_regular_user_cannot_use_admin_dependency(
 ) -> None:
     """Smoke-test require_admin by wiring a temporary test route."""
     from fastapi import Depends
+
     from control_station_lite.server.auth.dependencies import require_admin
 
     @app.get("/test-admin-only")

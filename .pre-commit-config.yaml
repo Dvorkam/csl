@@ -19,8 +19,15 @@ repos:
     rev: v0.11.12
     hooks:
       - id: ruff
+        name: ruff (fix)
         args: [--fix]
       - id: ruff-format
+      - id: ruff
+        name: ruff (check)
+        # Hard gate: no --fix so this mirrors `ruff check .` in CI exactly.
+        # The fix hook above exits 0 after applying fixes even when unfixable
+        # errors (e.g. E501) remain; this hook catches those.
+        args: []
 
   - repo: local
     hooks:
