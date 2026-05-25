@@ -110,8 +110,13 @@ Performed by the target owner and the control station admin together.
 
 **Control station side:**
 
-4. Admin opens the "Add Machine" form, pastes the registration bundle, supplies a friendly name and the target's SSH host/port.
-5. Control station decodes the bundle, performs a one-time connection test (SSH in, read the agent config, verify key fingerprint matches), and stores the machine record in SQLite. The private key is encrypted at rest using a key derived from a master secret in the control station's environment.
+4. Admin opens the "Add Machine" form, pastes the registration bundle, supplies a friendly name, the target's SSH host/port, and the **SSH username** (e.g. `root` or a named user). The bundle itself does not carry the username — it varies per target and is supplied separately at registration time.
+5. Control station decodes the bundle, performs a one-time connection test:
+   - Opens an SSH session using the bundle's private key and the admin-supplied username.
+   - Runs `cat ~/.csl/config.yaml` (or platform equivalent) as a short-lived exec command.
+   - Parses the returned YAML and verifies that `identity.key_fingerprint` matches the `key_fingerprint` field in the bundle.
+   - On mismatch or SSH failure the operation is aborted and no record is written.
+   Stores the machine record in SQLite only after the test succeeds. The private key is encrypted at rest with AES-256-GCM using the control station's master key.
 
 ### 3.2 Running a script on a machine
 
