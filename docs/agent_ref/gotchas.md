@@ -157,6 +157,23 @@ The `POST /api/machines` request body must therefore include `ssh_user` as a sep
 field alongside `bundle`, `name`, `ssh_host`, and `ssh_port`. The admin supplies it
 when registering the machine, not the target owner.
 
+## `fileConfig` and `disable_existing_loggers`
+
+`logging.config.fileConfig(path)` defaults to `disable_existing_loggers=True`.  This
+disables every logger that already existed at call time — including loggers in
+`control_station_lite.*` that were created during earlier imports.  Subsequent
+`logger.warning(...)` calls silently drop records because `logger.disabled` is `True`.
+
+The symptom is test-order sensitivity: tests that check `caplog.records` pass in
+isolation but fail when run after the migration tests (which call `alembic upgrade
+head`, which calls `fileConfig` via `env.py`).
+
+Fix: always pass `disable_existing_loggers=False`:
+
+```python
+fileConfig(config.config_file_name, disable_existing_loggers=False)
+```
+
 ## First PR on a fresh repo
 
 GitHub sets the first-pushed branch as the repository default. When there is no `main` yet:
