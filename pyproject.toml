@@ -1,6 +1,6 @@
 [project]
 name = "control-station-lite"
-version = "0.1.1"
+version = "0.1.2"
 description = "A lightweight self-hosted web service for controlling LAN machines"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,6 +18,7 @@ server = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.4",
     "asyncssh>=2.23.0",
+    "httpx>=0.27",
     "jinja2>=3.1.6",
     "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.5.0",
