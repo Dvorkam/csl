@@ -34,18 +34,23 @@ def _make_listener(port: int = 54321) -> MagicMock:
     return listener
 
 
-@pytest.fixture()
+@pytest.fixture
 def pool() -> SSHConnectionPool:
     return SSHConnectionPool()
 
 
 # Patch both asyncssh entry points used by ssh.py
-@pytest.fixture()
+@pytest.fixture
 def mock_connect(pool: SSHConnectionPool):
     conn = _make_conn()
     with (
-        patch("control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)) as p,
-        patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)
+        ) as p,
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.import_private_key",
+            return_value=MagicMock(),
+        ),
     ):
         yield p, conn
 
@@ -73,7 +78,9 @@ async def test_get_connection_reuses_existing(mock_connect, pool: SSHConnectionP
 async def test_get_connection_separate_per_host(mock_connect, pool: SSHConnectionPool) -> None:
     mock_fn, _ = mock_connect
     mock_fn.side_effect = [_make_conn(), _make_conn()]
-    with patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()):
+    with patch(
+        "control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()
+    ):
         c1 = await pool.get_connection("host-a", _PORT, _USER, _KEY)
         c2 = await pool.get_connection("host-b", _PORT, _USER, _KEY)
     assert c1 is not c2
@@ -88,7 +95,10 @@ async def test_get_connection_replaces_closed_conn(pool: SSHConnectionPool) -> N
             "control_station_lite.server.core.ssh.asyncssh.connect",
             AsyncMock(side_effect=[stale, fresh]),
         ),
-        patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.import_private_key",
+            return_value=MagicMock(),
+        ),
     ):
         # Seed pool with a closing connection
         await pool.get_connection(_HOST, _PORT, _USER, _KEY)
@@ -123,10 +133,17 @@ async def test_open_tunnel_returns_listener_and_port(pool: SSHConnectionPool) ->
     listener = _make_listener(port=12345)
     conn.forward_local_port.return_value = listener
     with (
-        patch("control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)),
-        patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)
+        ),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.import_private_key",
+            return_value=MagicMock(),
+        ),
     ):
-        returned_listener, port = await pool.open_tunnel(_HOST, _PORT, _USER, _KEY, "127.0.0.1", 36717)
+        returned_listener, port = await pool.open_tunnel(
+            _HOST, _PORT, _USER, _KEY, "127.0.0.1", 36717
+        )
     assert returned_listener is listener
     assert port == 12345
 
@@ -136,8 +153,13 @@ async def test_open_tunnel_tracks_listener_for_close(pool: SSHConnectionPool) ->
     listener = _make_listener()
     conn.forward_local_port.return_value = listener
     with (
-        patch("control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)),
-        patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)
+        ),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.import_private_key",
+            return_value=MagicMock(),
+        ),
     ):
         await pool.open_tunnel(_HOST, _PORT, _USER, _KEY, "127.0.0.1", 36717)
         await pool.close(_HOST, _PORT, _USER)
@@ -149,8 +171,13 @@ async def test_open_tunnel_forwards_to_correct_remote(pool: SSHConnectionPool) -
     conn = _make_conn()
     conn.forward_local_port.return_value = _make_listener()
     with (
-        patch("control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)),
-        patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)
+        ),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.import_private_key",
+            return_value=MagicMock(),
+        ),
     ):
         await pool.open_tunnel(_HOST, _PORT, _USER, _KEY, "127.0.0.1", 36717)
     conn.forward_local_port.assert_called_once_with("127.0.0.1", 0, "127.0.0.1", 36717)
@@ -195,7 +222,10 @@ async def test_close_all_closes_every_connection(pool: SSHConnectionPool) -> Non
             "control_station_lite.server.core.ssh.asyncssh.connect",
             AsyncMock(side_effect=[conn_a, conn_b]),
         ),
-        patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.import_private_key",
+            return_value=MagicMock(),
+        ),
     ):
         await pool.get_connection("host-a", _PORT, _USER, _KEY)
         await pool.get_connection("host-b", _PORT, _USER, _KEY)
@@ -207,8 +237,13 @@ async def test_close_all_closes_every_connection(pool: SSHConnectionPool) -> Non
 async def test_close_all_empties_pool(pool: SSHConnectionPool) -> None:
     conn = _make_conn()
     with (
-        patch("control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)),
-        patch("control_station_lite.server.core.ssh.asyncssh.import_private_key", return_value=MagicMock()),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.connect", AsyncMock(return_value=conn)
+        ),
+        patch(
+            "control_station_lite.server.core.ssh.asyncssh.import_private_key",
+            return_value=MagicMock(),
+        ),
     ):
         await pool.get_connection(_HOST, _PORT, _USER, _KEY)
         await pool.close_all()

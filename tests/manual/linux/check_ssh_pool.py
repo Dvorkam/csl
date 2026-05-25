@@ -52,8 +52,18 @@ def section(title: str) -> None:
 async def run() -> None:
     if not _KEY_PATH.exists():
         print(f"ERROR: key not found at {_KEY_PATH}")
-        print("Run: ssh-keygen -t ed25519 -f /tmp/csl_test_key -N \"\"")
+        print('Run: ssh-keygen -t ed25519 -f /tmp/csl_test_key -N ""')
         print("Then: cat /tmp/csl_test_key.pub >> ~/.ssh/authorized_keys")
+        sys.exit(1)
+
+    import socket
+
+    try:
+        with socket.create_connection((_HOST, _PORT), timeout=2):
+            pass
+    except OSError:
+        print(f"ERROR: nothing is listening on {_HOST}:{_PORT}")
+        print("Start sshd first:  sudo systemctl start sshd")
         sys.exit(1)
 
     private_key = _KEY_PATH.read_bytes()

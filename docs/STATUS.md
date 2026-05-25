@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Task 2.7** — `server/core/agent_client.py`: typed agent client over SSH tunnel.
+**Phase 3.1** — `server/auth/password.py`: bcrypt hash/verify.
 
 ## Up next
 
-**Phase 3** — Authentication and authorisation.
+**Phase 3.2** — `server/auth/jwt.py`: access and refresh token issue/verify.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 2.7 | `server/core/agent_client.py`: `AgentClient` async context manager; `__aenter__` opens SSH tunnel via `SSHConnectionPool`, creates `httpx.AsyncClient`; `ensure_agent_running` pings `/healthz`, on failure issues platform start command (`systemctl`/`schtasks`/`launchctl`) via SSH exec, polls with `(0.5,1,1.5,2)` s backoff; 6 typed methods (`get_health`, `get_script_state`, `stage_script`, `submit_job`, `kill_job`, `stream_logs`); `stream_logs` is an async generator that yields SSE `data:` payloads; `httpx` added to server runtime deps; `_http_client` injectable for tests; `httpx.MockTransport` used in 16 unit tests | branch `feature/task-2.6-ssh-pool` |
 | 2.6 | `server/core/ssh.py`: `SSHConnectionPool` keyed by `(host, port, username)`; `get_connection` opens or reuses, replaces stale closed connections; `open_tunnel` forwards a random local port via asyncssh `forward_local_port`, tracks listeners for clean shutdown; `close` / `close_all` for teardown; `get_ssh_pool()` lru_cached singleton; `known_hosts=None` with doc note (fingerprint check delegated to `agent_client.py`); 15 unit tests (all mocked); manual test in `tests/manual/linux/` for real sshd | branch `feature/task-2.6-ssh-pool` |
 | 2.5 | `server/core/crypto.py`: `encrypt(plaintext, master_key) -> bytes` and `decrypt(data, master_key) -> bytes` using AES-256-GCM; 12-byte random nonce prepended to each blob; `InvalidTag` propagated on wrong key or tampered ciphertext; `ValueError` on truncated input; 15 unit tests covering round-trips, nonce uniqueness, all error cases | branch `feature/task-2.3-2.4-alembic-healthz` |
 | 2.4 | `server/main.py`: `_EXPECTED_ENDPOINTS` set; `api/health.py`: `HealthResponse` Pydantic model, `GET /healthz` returns `status` (ok/degraded), `version` (from package metadata, "unknown" fallback), `db` (ok/error via `SELECT 1`); 10 tests covering happy path, DB-down degraded path, and OpenAPI schema guard | branch `feature/task-2.3-2.4-alembic-healthz` |
