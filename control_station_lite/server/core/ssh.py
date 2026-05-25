@@ -9,3 +9,124 @@
 # (at your option) any later version, with an additional permission for
 # distribution through app stores (see LICENSE).
 
+import asyncio
+import logging
+from dataclasses import dataclass, field
+from functools import lru_cache
+
+import asyncssh
+
+logger = logging.getLogger(__name__)
+
+# (host, port, username)
+_ConnKey = tuple[str, int, str]
+
+
+@dataclass
+class _Entry:
+    conn: asyncssh.SSHClientConnection
+    listeners: list[asyncssh.SSHListener] = field(default_factory=list)
+
+
+class SSHConnectionPool:
+    """One persistent SSH connection per target, keyed by (host, port, username).
+
+    Reconnects transparently when a cached connection has been closed (e.g.
+    the remote agent shut down or the network dropped). Tunnels opened on a
+    connection are tracked so they can be closed cleanly via :meth:`close`.
+
+    Note: ``known_hosts=None`` trusts any host key. Per-registration fingerprint
+    verification is the responsibility of the caller (``agent_client.py`` checks
+    the ``Machine.key_fingerprint`` field before trusting a new connection).
+    """
+
+    def __init__(self) -> None:
+        self._pool: dict[_ConnKey, _Entry] = {}
+        self._lock = asyncio.Lock()
+
+    async def get_connection(
+        self,
+        host: str,
+        port: int,
+        username: str,
+        private_key: bytes,
+        *,
+        connect_timeout: float = 10.0,
+    ) -> asyncssh.SSHClientConnection:
+        """Return an open connection, opening a new one if necessary."""
+        key = (host, port, username)
+        async with self._lock:
+            entry = self._pool.get(key)
+            if entry is not None and not entry.conn.is_closed():
+                return entry.conn
+            conn = await asyncssh.connect(
+                host,
+                port=port,
+                username=username,
+                client_keys=[asyncssh.import_private_key(private_key)],
+                known_hosts=None,
+                connect_timeout=connect_timeout,
+            )
+            self._pool[key] = _Entry(conn=conn)
+            logger.debug("SSH: opened connection to %s@%s:%d", username, host, port)
+            return conn
+
+    async def open_tunnel(
+        self,
+        host: str,
+        port: int,
+        username: str,
+        private_key: bytes,
+        remote_host: str,
+        remote_port: int,
+        *,
+        local_host: str = "127.0.0.1",
+    ) -> tuple[asyncssh.SSHListener, int]:
+        """Forward a random local port to *remote_host*:*remote_port* over SSH.
+
+        Returns ``(listener, local_port)``.  The caller should close the
+        listener when the tunnel is no longer needed; :meth:`close` also
+        closes all listeners associated with a connection.
+        """
+        conn = await self.get_connection(host, port, username, private_key)
+        listener = await conn.forward_local_port(local_host, 0, remote_host, remote_port)
+        local_port = listener.get_port()
+        key = (host, port, username)
+        async with self._lock:
+            if key in self._pool:
+                self._pool[key].listeners.append(listener)
+        logger.debug(
+            "SSH: tunnel %s:%d -> %s:%d (local %d)",
+            host,
+            port,
+            remote_host,
+            remote_port,
+            local_port,
+        )
+        return listener, local_port
+
+    async def close(self, host: str, port: int, username: str) -> None:
+        """Close the connection and all its tunnels for the given target."""
+        key = (host, port, username)
+        async with self._lock:
+            entry = self._pool.pop(key, None)
+        if entry is None:
+            return
+        for listener in entry.listeners:
+            listener.close()
+            await listener.wait_closed()
+        entry.conn.close()
+        await entry.conn.wait_closed()
+        logger.debug("SSH: closed connection to %s@%s:%d", username, host, port)
+
+    async def close_all(self) -> None:
+        """Close every pooled connection. Call during application shutdown."""
+        async with self._lock:
+            keys = list(self._pool.keys())
+        for key in keys:
+            await self.close(*key)
+
+
+@lru_cache(maxsize=1)
+def get_ssh_pool() -> SSHConnectionPool:
+    return SSHConnectionPool()
