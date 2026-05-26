@@ -117,6 +117,61 @@ environments where the package is not installed as an editable install (`uv sync
 this, but it can fail in CI if the install step is skipped). Any module that calls this at import
 time will break test collection. Always guard with a try/except and fall back to `"0.0.0-dev"`.
 
+## `passlib` is incompatible with `bcrypt` ≥ 4 / 5
+
+`passlib[bcrypt]` 1.7.4 (the last release, from 2020) fails with `bcrypt` ≥ 4 because
+the newer library removed `bcrypt.__about__`. The symptom is a `ValueError: password
+cannot be longer than 72 bytes` raised from `bcrypt.hashpw` via passlib's internal
+dispatch even for short passwords — it is actually a version-detection failure, not a
+real length violation.
+
+Fix: use `bcrypt` directly; `hash_password` / `verify_password` in
+`server/auth/password.py` wrap `bcrypt.hashpw` / `bcrypt.checkpw` with no passlib
+layer. `types-passlib` has been removed from dev deps. `[server]` deps now list
+`bcrypt>=4` instead of `passlib[bcrypt]`.
+
+## Secure cookies and `TestClient` — use `base_url="https://testserver"`
+
+`response.set_cookie(secure=True, ...)` cookies are only transmitted by an HTTP client
+on HTTPS connections. `TestClient` defaults to `base_url="http://testserver"` (HTTP),
+so cookies with `Secure` are set in the `Set-Cookie` header but never sent back on
+subsequent requests — auth tests appear to work until the refresh/logout endpoints
+return 401 because the cookie jar is empty.
+
+Fix: construct the test client with `base_url="https://testserver"`. The underlying
+`ASGITransport` ignores the scheme, so requests still reach the ASGI app normally;
+only the cookie-jar logic changes.
+
+```python
+with TestClient(app, base_url="https://testserver") as client:
+    ...
+```
+
+## `ssh_user` in the registration bundle
+
+`RegistrationBundle` carries `ssh_user` (the OS username at the time `csl-agent init`
+ran, from `getpass.getuser()`).  `POST /api/machines` uses this value unless the admin
+supplies an explicit `ssh_user` override in the request body — useful when the SSH
+daemon accepts a different account than the one that ran `csl-agent init` (e.g. `root`
+with shared `administrators_authorized_keys` on Windows).
+
+## `fileConfig` and `disable_existing_loggers`
+
+`logging.config.fileConfig(path)` defaults to `disable_existing_loggers=True`.  This
+disables every logger that already existed at call time — including loggers in
+`control_station_lite.*` that were created during earlier imports.  Subsequent
+`logger.warning(...)` calls silently drop records because `logger.disabled` is `True`.
+
+The symptom is test-order sensitivity: tests that check `caplog.records` pass in
+isolation but fail when run after the migration tests (which call `alembic upgrade
+head`, which calls `fileConfig` via `env.py`).
+
+Fix: always pass `disable_existing_loggers=False`:
+
+```python
+fileConfig(config.config_file_name, disable_existing_loggers=False)
+```
+
 ## First PR on a fresh repo
 
 GitHub sets the first-pushed branch as the repository default. When there is no `main` yet:

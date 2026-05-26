@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import getpass
 import hashlib
 import logging
 import socket
@@ -311,6 +312,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         scripts_dir=str(paths.scripts_dir),
         hostname_hint=socket.gethostname(),
         platform=_platform_name(),
+        ssh_user=getpass.getuser(),
     )
 
     print("\n=== REGISTRATION BUNDLE (send this to the control station admin) ===")
