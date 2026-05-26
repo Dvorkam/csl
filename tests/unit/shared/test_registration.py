@@ -14,6 +14,7 @@ _SAMPLE = {
     "scripts_dir": "/home/user/.csl/scripts",
     "hostname_hint": "my-pc",
     "platform": "linux",
+    "ssh_user": "alice",
 }
 
 
@@ -47,6 +48,7 @@ class TestEncodeBundle:
         assert bundle.platform == _SAMPLE["platform"]
         assert bundle.scripts_dir == _SAMPLE["scripts_dir"]
         assert bundle.hostname_hint == _SAMPLE["hostname_hint"]
+        assert bundle.ssh_user == _SAMPLE["ssh_user"]
 
 
 class TestRegistrationBundleDecode:

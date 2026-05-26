@@ -78,7 +78,7 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 - [ ] **4.1** Implement `shared/registration.py`: encode/decode registration bundle format. Round-trip tests.
 - [ ] **4.2** Implement `server/api/machines.py`:
-  - `POST /api/machines` (admin): request body = `{bundle, name, ssh_host, ssh_port, ssh_user}`. Decode bundle, perform one-time connection test (SSH in with bundle key + supplied username → `cat ~/.csl/config.yaml` → verify `identity.key_fingerprint` matches bundle). Encrypt private key with AES-256-GCM before storing. Atomic: failure leaves no record.
+  - `POST /api/machines` (admin): request body = `{bundle, name, ssh_host, ssh_port, ssh_user?}`. Bundle carries `ssh_user`; request field overrides when supplied. Decode bundle, perform one-time connection test (SSH in → `cat ~/.csl/config.yaml` → verify `identity.key_fingerprint` matches bundle). Encrypt private key with AES-256-GCM before storing. Atomic: failure leaves no record.
   - `GET /api/machines`: list for current user (filtered to bookmarked machines).
   - `GET /api/machines/{id}`: detail including current reachability and (if agent is running) list of running persistent jobs.
   - `DELETE /api/machines/{id}` (admin).

@@ -44,7 +44,7 @@ class RegisterMachineIn(BaseModel):
     name: str
     ssh_host: str
     ssh_port: int = 22
-    ssh_user: str
+    ssh_user: str | None = None  # overrides bundle value; defaults to bundle.ssh_user
     mac_address: str | None = None
 
 
@@ -169,6 +169,8 @@ async def register_machine(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    ssh_user = body.ssh_user or bundle.ssh_user
+
     existing = await session.execute(select(Machine).where(Machine.name == body.name))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
@@ -177,7 +179,7 @@ async def register_machine(
         )
 
     try:
-        await _ssh_connection_test(bundle, body.ssh_user, body.ssh_host, body.ssh_port)
+        await _ssh_connection_test(bundle, ssh_user, body.ssh_host, body.ssh_port)
     except (OSError, asyncssh.Error, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -191,7 +193,7 @@ async def register_machine(
         name=body.name,
         ssh_host=body.ssh_host,
         ssh_port=body.ssh_port,
-        ssh_user=body.ssh_user,
+        ssh_user=ssh_user,
         ssh_key_encrypted=encrypted_key,
         key_fingerprint=bundle.key_fingerprint,
         agent_port=bundle.agent_port,

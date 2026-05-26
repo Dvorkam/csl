@@ -36,7 +36,15 @@ __all__ = ["RegistrationBundle", "encode_bundle"]
 
 # Keys present in every valid bundle.
 _REQUIRED_FIELDS = frozenset(
-    {"private_key", "key_fingerprint", "agent_port", "scripts_dir", "hostname_hint", "platform"}
+    {
+        "private_key",
+        "key_fingerprint",
+        "agent_port",
+        "scripts_dir",
+        "hostname_hint",
+        "platform",
+        "ssh_user",
+    }
 )
 
 _VALID_PLATFORMS = frozenset({"linux", "windows", "macos"})
@@ -53,6 +61,7 @@ class RegistrationBundle:
         scripts_dir: str,
         hostname_hint: str,
         platform: str,
+        ssh_user: str,
     ) -> None:
         self.private_key = private_key
         self.key_fingerprint = key_fingerprint
@@ -60,6 +69,7 @@ class RegistrationBundle:
         self.scripts_dir = scripts_dir
         self.hostname_hint = hostname_hint
         self.platform = platform
+        self.ssh_user = ssh_user
 
     def encode(self) -> str:
         """Return the base64-encoded JSON representation."""
@@ -70,6 +80,7 @@ class RegistrationBundle:
             scripts_dir=self.scripts_dir,
             hostname_hint=self.hostname_hint,
             platform=self.platform,
+            ssh_user=self.ssh_user,
         )
 
     @classmethod
@@ -106,6 +117,7 @@ class RegistrationBundle:
             scripts_dir=data["scripts_dir"],
             hostname_hint=data["hostname_hint"],
             platform=platform,
+            ssh_user=data["ssh_user"],
         )
 
 
@@ -117,6 +129,7 @@ def encode_bundle(
     scripts_dir: str,
     hostname_hint: str,
     platform: str,
+    ssh_user: str,
 ) -> str:
     """Return a base64-encoded JSON registration bundle string."""
     payload: dict[str, Any] = {
@@ -126,5 +139,6 @@ def encode_bundle(
         "scripts_dir": scripts_dir,
         "hostname_hint": hostname_hint,
         "platform": platform,
+        "ssh_user": ssh_user,
     }
     return base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()

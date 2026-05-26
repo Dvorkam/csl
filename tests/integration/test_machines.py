@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from control_station_lite.server.auth.jwt import create_access_token
 from control_station_lite.server.auth.password import hash_password
 from control_station_lite.server.core.crypto import encrypt
-from control_station_lite.server.db.models import Base, Machine, User, UserMachine
+from control_station_lite.server.db.models import Base, Machine, User
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.main import app
 from control_station_lite.shared.registration import encode_bundle
@@ -28,6 +28,7 @@ _BUNDLE_KWARGS = {
     "scripts_dir": "/home/user/.csl/scripts",
     "hostname_hint": "my-pc",
     "platform": "linux",
+    "ssh_user": "alice",
 }
 
 
@@ -157,7 +158,7 @@ class TestRegisterMachine:
     def test_invalid_bundle_returns_400(self, client: TestClient, admin_user: User) -> None:
         resp = client.post(
             "/api/machines",
-            json={"bundle": "!!!not-base64!!!", "name": "x", "ssh_host": "h", "ssh_user": "u"},
+            json={"bundle": "!!!not-base64!!!", "name": "x", "ssh_host": "h"},
             headers=_admin_h(admin_user),
         )
         assert resp.status_code == 400
@@ -173,19 +174,12 @@ class TestRegisterMachine:
         ):
             resp = client.post(
                 "/api/machines",
-                json={
-                    "bundle": bundle,
-                    "name": "my-machine",
-                    "ssh_host": "192.168.1.100",
-                    "ssh_user": "testuser",
-                },
+                json={"bundle": bundle, "name": "my-machine", "ssh_host": "192.168.1.100"},
                 headers=_admin_h(admin_user),
             )
         assert resp.status_code == 422
 
-    def test_fingerprint_mismatch_returns_422(
-        self, client: TestClient, admin_user: User
-    ) -> None:
+    def test_fingerprint_mismatch_returns_422(self, client: TestClient, admin_user: User) -> None:
         bundle = encode_bundle(**_BUNDLE_KWARGS)
         with patch(
             "control_station_lite.server.api.machines._ssh_connection_test",
@@ -194,27 +188,17 @@ class TestRegisterMachine:
         ):
             resp = client.post(
                 "/api/machines",
-                json={
-                    "bundle": bundle,
-                    "name": "my-machine",
-                    "ssh_host": "192.168.1.100",
-                    "ssh_user": "testuser",
-                },
+                json={"bundle": bundle, "name": "my-machine", "ssh_host": "192.168.1.100"},
                 headers=_admin_h(admin_user),
             )
         assert resp.status_code == 422
 
-    def test_success_returns_201(self, client: TestClient, admin_user: User) -> None:
+    def test_ssh_user_defaults_to_bundle_value(self, client: TestClient, admin_user: User) -> None:
         bundle = encode_bundle(**_BUNDLE_KWARGS)
         with _no_op_connection_test():
             resp = client.post(
                 "/api/machines",
-                json={
-                    "bundle": bundle,
-                    "name": "my-machine",
-                    "ssh_host": "192.168.1.100",
-                    "ssh_user": "testuser",
-                },
+                json={"bundle": bundle, "name": "my-machine", "ssh_host": "192.168.1.100"},
                 headers=_admin_h(admin_user),
             )
         assert resp.status_code == 201
@@ -223,7 +207,23 @@ class TestRegisterMachine:
         assert data["platform"] == "linux"
         assert data["key_fingerprint"] == _BUNDLE_KWARGS["key_fingerprint"]
         assert data["agent_port"] == _BUNDLE_KWARGS["agent_port"]
-        assert data["ssh_user"] == "testuser"
+        assert data["ssh_user"] == _BUNDLE_KWARGS["ssh_user"]  # "alice" from bundle
+
+    def test_ssh_user_override_takes_precedence(self, client: TestClient, admin_user: User) -> None:
+        bundle = encode_bundle(**_BUNDLE_KWARGS)
+        with _no_op_connection_test():
+            resp = client.post(
+                "/api/machines",
+                json={
+                    "bundle": bundle,
+                    "name": "my-machine",
+                    "ssh_host": "192.168.1.100",
+                    "ssh_user": "root",
+                },
+                headers=_admin_h(admin_user),
+            )
+        assert resp.status_code == 201
+        assert resp.json()["ssh_user"] == "root"
 
     def test_duplicate_name_returns_409(
         self, client: TestClient, admin_user: User, machine: Machine
@@ -232,12 +232,7 @@ class TestRegisterMachine:
         with _no_op_connection_test():
             resp = client.post(
                 "/api/machines",
-                json={
-                    "bundle": bundle,
-                    "name": "test-machine",
-                    "ssh_host": "192.168.1.101",
-                    "ssh_user": "testuser",
-                },
+                json={"bundle": bundle, "name": "test-machine", "ssh_host": "192.168.1.101"},
                 headers=_admin_h(admin_user),
             )
         assert resp.status_code == 409
@@ -245,7 +240,7 @@ class TestRegisterMachine:
     def test_non_admin_returns_403(self, client: TestClient, regular_user: User) -> None:
         resp = client.post(
             "/api/machines",
-            json={"bundle": "x", "name": "x", "ssh_host": "h", "ssh_user": "u"},
+            json={"bundle": "x", "name": "x", "ssh_host": "h"},
             headers=_user_h(regular_user),
         )
         assert resp.status_code == 403
@@ -259,7 +254,6 @@ class TestRegisterMachine:
                     "bundle": bundle,
                     "name": "mac-machine",
                     "ssh_host": "192.168.1.100",
-                    "ssh_user": "testuser",
                     "mac_address": "AA:BB:CC:DD:EE:FF",
                 },
                 headers=_admin_h(admin_user),
@@ -308,9 +302,7 @@ class TestListAndGetMachine:
         resp = client.get(f"/api/machines/{machine.id}", headers=_user_h(regular_user))
         assert resp.status_code == 403
 
-    def test_get_machine_not_found_returns_404(
-        self, client: TestClient, admin_user: User
-    ) -> None:
+    def test_get_machine_not_found_returns_404(self, client: TestClient, admin_user: User) -> None:
         resp = client.get("/api/machines/9999", headers=_admin_h(admin_user))
         assert resp.status_code == 404
 
@@ -360,21 +352,15 @@ class TestBookmarks:
     ) -> None:
         # Before bookmark — 403
         assert (
-            client.get(
-                f"/api/machines/{machine.id}", headers=_user_h(regular_user)
-            ).status_code
+            client.get(f"/api/machines/{machine.id}", headers=_user_h(regular_user)).status_code
             == 403
         )
         # Add bookmark
-        resp = client.post(
-            f"/api/machines/{machine.id}/bookmark", headers=_user_h(regular_user)
-        )
+        resp = client.post(f"/api/machines/{machine.id}/bookmark", headers=_user_h(regular_user))
         assert resp.status_code == 204
         # After bookmark — 200
         assert (
-            client.get(
-                f"/api/machines/{machine.id}", headers=_user_h(regular_user)
-            ).status_code
+            client.get(f"/api/machines/{machine.id}", headers=_user_h(regular_user)).status_code
             == 200
         )
 
@@ -382,9 +368,7 @@ class TestBookmarks:
         self, client: TestClient, regular_user: User, machine: Machine
     ) -> None:
         client.post(f"/api/machines/{machine.id}/bookmark", headers=_user_h(regular_user))
-        resp = client.post(
-            f"/api/machines/{machine.id}/bookmark", headers=_user_h(regular_user)
-        )
+        resp = client.post(f"/api/machines/{machine.id}/bookmark", headers=_user_h(regular_user))
         assert resp.status_code == 204
 
     def test_remove_bookmark_revokes_access(
@@ -396,9 +380,7 @@ class TestBookmarks:
         client.post(f"/api/machines/{machine.id}/bookmark", headers=_user_h(regular_user))
         client.delete(f"/api/machines/{machine.id}/bookmark", headers=_user_h(regular_user))
         assert (
-            client.get(
-                f"/api/machines/{machine.id}", headers=_user_h(regular_user)
-            ).status_code
+            client.get(f"/api/machines/{machine.id}", headers=_user_h(regular_user)).status_code
             == 403
         )
 
@@ -440,9 +422,12 @@ class TestPingMachine:
     def test_reachable_returns_true_with_latency(
         self, client: TestClient, admin_user: User, machine: Machine
     ) -> None:
-        with _mock_asyncssh_connect_success(), patch(
-            "control_station_lite.server.api.machines.asyncssh.import_private_key",
-            return_value=MagicMock(),
+        with (
+            _mock_asyncssh_connect_success(),
+            patch(
+                "control_station_lite.server.api.machines.asyncssh.import_private_key",
+                return_value=MagicMock(),
+            ),
         ):
             resp = client.get(f"/api/machines/{machine.id}/ping", headers=_admin_h(admin_user))
         assert resp.status_code == 200
@@ -453,12 +438,15 @@ class TestPingMachine:
     def test_unreachable_returns_false(
         self, client: TestClient, admin_user: User, machine: Machine
     ) -> None:
-        with patch(
-            "control_station_lite.server.api.machines.asyncssh.connect",
-            side_effect=OSError("refused"),
-        ), patch(
-            "control_station_lite.server.api.machines.asyncssh.import_private_key",
-            return_value=MagicMock(),
+        with (
+            patch(
+                "control_station_lite.server.api.machines.asyncssh.connect",
+                side_effect=OSError("refused"),
+            ),
+            patch(
+                "control_station_lite.server.api.machines.asyncssh.import_private_key",
+                return_value=MagicMock(),
+            ),
         ):
             resp = client.get(f"/api/machines/{machine.id}/ping", headers=_admin_h(admin_user))
         assert resp.status_code == 200
@@ -508,10 +496,11 @@ class TestAgentStatus:
     ) -> None:
         health_payload = {"version": "0.1.0", "running_persistent_jobs": 0, "idle_seconds": 5.0}
         mock_pool, mock_http = _mock_pool_and_http(health_payload)
-        with patch(
-            "control_station_lite.server.api.machines.get_ssh_pool", return_value=mock_pool
-        ), patch(
-            "control_station_lite.server.api.machines.httpx.AsyncClient", return_value=mock_http
+        with (
+            patch("control_station_lite.server.api.machines.get_ssh_pool", return_value=mock_pool),
+            patch(
+                "control_station_lite.server.api.machines.httpx.AsyncClient", return_value=mock_http
+            ),
         ):
             resp = client.get(
                 f"/api/machines/{machine.id}/agent-status", headers=_admin_h(admin_user)
@@ -525,10 +514,11 @@ class TestAgentStatus:
         self, client: TestClient, admin_user: User, machine: Machine
     ) -> None:
         mock_pool, mock_http = _mock_pool_and_http(None)
-        with patch(
-            "control_station_lite.server.api.machines.get_ssh_pool", return_value=mock_pool
-        ), patch(
-            "control_station_lite.server.api.machines.httpx.AsyncClient", return_value=mock_http
+        with (
+            patch("control_station_lite.server.api.machines.get_ssh_pool", return_value=mock_pool),
+            patch(
+                "control_station_lite.server.api.machines.httpx.AsyncClient", return_value=mock_http
+            ),
         ):
             resp = client.get(
                 f"/api/machines/{machine.id}/agent-status", headers=_admin_h(admin_user)
@@ -541,9 +531,7 @@ class TestAgentStatus:
     ) -> None:
         mock_pool = MagicMock()
         mock_pool.open_tunnel = AsyncMock(side_effect=OSError("no route"))
-        with patch(
-            "control_station_lite.server.api.machines.get_ssh_pool", return_value=mock_pool
-        ):
+        with patch("control_station_lite.server.api.machines.get_ssh_pool", return_value=mock_pool):
             resp = client.get(
                 f"/api/machines/{machine.id}/agent-status", headers=_admin_h(admin_user)
             )
@@ -557,7 +545,5 @@ class TestAgentStatus:
     def test_user_without_bookmark_returns_403(
         self, client: TestClient, regular_user: User, machine: Machine
     ) -> None:
-        resp = client.get(
-            f"/api/machines/{machine.id}/agent-status", headers=_user_h(regular_user)
-        )
+        resp = client.get(f"/api/machines/{machine.id}/agent-status", headers=_user_h(regular_user))
         assert resp.status_code == 403

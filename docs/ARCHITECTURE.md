@@ -110,7 +110,7 @@ Performed by the target owner and the control station admin together.
 
 **Control station side:**
 
-4. Admin opens the "Add Machine" form, pastes the registration bundle, supplies a friendly name, the target's SSH host/port, and the **SSH username** (e.g. `root` or a named user). The bundle itself does not carry the username — it varies per target and is supplied separately at registration time.
+4. Admin opens the "Add Machine" form, pastes the registration bundle, supplies a friendly name and the target's SSH host/port. The bundle includes the SSH username used by `csl-agent init` (`getpass.getuser()`). The admin may override this if they need to connect as a different account (e.g. `root`).
 5. Control station decodes the bundle, performs a one-time connection test:
    - Opens an SSH session using the bundle's private key and the admin-supplied username.
    - Runs `cat ~/.csl/config.yaml` (or platform equivalent) as a short-lived exec command.

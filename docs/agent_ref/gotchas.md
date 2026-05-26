@@ -147,15 +147,13 @@ with TestClient(app, base_url="https://testserver") as client:
     ...
 ```
 
-## Registration bundle does not carry `ssh_user`
+## `ssh_user` in the registration bundle
 
-`RegistrationBundle` contains `private_key`, `key_fingerprint`, `agent_port`,
-`scripts_dir`, `hostname_hint`, and `platform` — but **not** the SSH username. The
-username varies (root vs. a named user) and was excluded to keep the bundle minimal.
-
-The `POST /api/machines` request body must therefore include `ssh_user` as a separate
-field alongside `bundle`, `name`, `ssh_host`, and `ssh_port`. The admin supplies it
-when registering the machine, not the target owner.
+`RegistrationBundle` carries `ssh_user` (the OS username at the time `csl-agent init`
+ran, from `getpass.getuser()`).  `POST /api/machines` uses this value unless the admin
+supplies an explicit `ssh_user` override in the request body — useful when the SSH
+daemon accepts a different account than the one that ran `csl-agent init` (e.g. `root`
+with shared `administrators_authorized_keys` on Windows).
 
 ## `fileConfig` and `disable_existing_loggers`
 
