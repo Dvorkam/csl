@@ -38,6 +38,11 @@ _EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
     ("DELETE", "/api/machines/{machine_id}/bookmark"),
     ("GET", "/api/machines/{machine_id}/ping"),
     ("GET", "/api/machines/{machine_id}/agent-status"),
+    ("GET", "/api/scripts"),
+    ("GET", "/api/scripts/{name}"),
+    ("POST", "/api/scripts"),
+    ("PUT", "/api/scripts/{name}"),
+    ("DELETE", "/api/scripts/{name}"),
 }
 
 app = FastAPI(title="control-station-lite")
