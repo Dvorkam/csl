@@ -155,6 +155,23 @@ supplies an explicit `ssh_user` override in the request body — useful when the
 daemon accepts a different account than the one that ran `csl-agent init` (e.g. `root`
 with shared `administrators_authorized_keys` on Windows).
 
+## pre-commit ruff version must match the project venv
+
+The hard-gate `ruff (check)` pre-commit hook runs the binary from the hook's
+isolated cache (pinned by `rev:` in `.pre-commit-config.yaml`).  CI runs
+`uv run ruff check .`, which uses the venv binary (from `pyproject.toml`).
+If the two versions differ, the gate passes locally but fails in CI.
+
+Rule: whenever ruff is bumped, update **both** files in the same commit:
+
+```
+# .pre-commit-config.yaml
+rev: v0.15.12        # ← must match
+
+# pyproject.toml [dependency-groups].dev
+"ruff==0.15.12",     # ← must match
+```
+
 ## `fileConfig` and `disable_existing_loggers`
 
 `logging.config.fileConfig(path)` defaults to `disable_existing_loggers=True`.  This
