@@ -10,7 +10,6 @@ from control_station_lite.server.api.jobs import _approval_error_response, _get_
 from control_station_lite.server.db.models import Job
 from control_station_lite.shared.models import ApprovalState
 
-
 # ---------------------------------------------------------------------------
 # _get_job_or_404
 # ---------------------------------------------------------------------------
