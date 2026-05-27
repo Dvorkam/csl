@@ -13,9 +13,11 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from control_station_lite.server.api import (
     admin,
@@ -27,6 +29,10 @@ from control_station_lite.server.api import (
     machines,
     scripts,
 )
+from control_station_lite.server.web import auth as web_auth
+from control_station_lite.server.web import dashboard as web_dashboard
+
+_SERVER_DIR = Path(__file__).parent
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +94,13 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="control-station-lite", lifespan=_lifespan)
 
+app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="static")
+
+# Web (HTML) routes — included before API so /login takes priority over any future conflict
+app.include_router(web_auth.router)
+app.include_router(web_dashboard.router)
+
+# JSON API routes
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(machines.router)

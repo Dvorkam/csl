@@ -134,9 +134,9 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 ## Phase 8 — Frontend (Jinja2 + HTMX)
 
-- [ ] **8.1** Base layout: nav, login state, flash messages.
-- [ ] **8.2** Login page.
-- [ ] **8.3** Dashboard: machine list with HTMX-driven reachability polling.
+- [x] **8.1** Base layout: nav, login state, flash messages.
+- [x] **8.2** Login page.
+- [x] **8.3** Dashboard: machine list with HTMX-driven reachability polling.
 - [ ] **8.4** Machine detail page: status panel, running-jobs list, available-scripts list.
 - [ ] **8.5** Script run dialog: dynamically rendered form from script metadata (string / int / float / bool / choice / path); client-side validation; submit; redirect to job view for persistent jobs. Handles `pending_approval` and `rejected` responses by surfacing the agent state, not a generic error.
 - [ ] **8.6** Live log viewer: SSE-based, auto-scrolling, with kill button for persistent jobs.

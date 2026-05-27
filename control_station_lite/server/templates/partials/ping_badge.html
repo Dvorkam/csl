@@ -1,0 +1,21 @@
+{% if reachable %}
+<span
+  id="ping-{{ request.path_params.machine_id }}"
+  class="ping-badge ping-online"
+  hx-get="{{ request.url.path }}"
+  hx-trigger="every 30s"
+  hx-swap="outerHTML"
+  title="Online — {{ latency_ms }} ms"
+  aria-label="Online"
+>&#9679; {{ latency_ms }} ms</span>
+{% else %}
+<span
+  id="ping-{{ request.path_params.machine_id }}"
+  class="ping-badge ping-offline"
+  hx-get="{{ request.url.path }}"
+  hx-trigger="every 30s"
+  hx-swap="outerHTML"
+  title="Unreachable"
+  aria-label="Offline"
+>&#9679; Offline</span>
+{% endif %}

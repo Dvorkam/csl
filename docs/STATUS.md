@@ -7,16 +7,18 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 7.1–7.3** — Built-in actions (Wake-on-LAN).
+**Phase 8.1–8.3** — Frontend foundation (base layout, login page, dashboard with HTMX reachability polling).
 
 ## Up next
 
-**Phase 8** — Frontend (Jinja2 + HTMX).
+**Phase 8.4–8.7** — Machine detail page, script run dialog, live log viewer, approval-state badges.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 7.1–7.3 | Phase 7 complete. `server/core/magic_packet.py` + `server/api/builtin.py`: WoL magic packet + `POST /api/machines/{id}/builtin/wol`. Audit-log integration. 17 tests. | PR #17 |
+| 8.1–8.3 | Frontend foundation. `server/web/`: `deps.py` (cookie-based auth dependency, flash helpers), `auth.py` (GET/POST /login, POST /logout), `dashboard.py` (GET /, HTMX ping-badge partial). Templates: `base.html`, `login.html`, `dashboard.html`, `partials/ping_badge.html`. `static/css/style.css` + bundled `htmx.min.js` (2.0.4). `python-multipart` added to server extras. | branch `feature/phase-8-frontend-foundation` |
 | 6.1–6.6 | Phase 6 complete. `server/api/jobs.py`: submit, status, SSE log proxy, kill, history. `server/core/job_reconciler.py`: background task polls agents for running jobs. End-to-end tests for approval flow, persistent job streaming, rejected script surface. | PR #16 |
 | 7.1–7.3 | Phase 7 complete. `server/core/magic_packet.py`: `build_packet` (102-byte WoL packet, accepts `:` / `-` / unseparated MAC) + `broadcast` (UDP, configurable addr/port). `server/api/builtin.py`: `POST /api/machines/{id}/builtin/wol` — auth + bookmark-gated, 400 on missing MAC, audit-log entry on success and failure, 502 on socket error. 17 unit + integration tests. | branch `feature/phase-7-builtin-wol` |
 | 3.1–3.7 | Phase 3 complete. `password.py`: bcrypt 5.x direct (dropped passlib — incompatible). `jwt.py`: HS256 access (30 min) + refresh (14 day) tokens, JTI-based. `dependencies.py`: `current_user` + `require_admin` FastAPI deps. `api/auth.py`: login/refresh/logout with `HttpOnly Secure SameSite=Strict` refresh cookie; rotation revokes old JTI on refresh; logout revokes on exit. `server/cli.py` + `csl-admin` entry point for `create-admin`. 24 integration tests (real bcrypt, real JWT, real in-memory SQLite) — `base_url="https://testserver"` required for Secure cookie propagation. | branch `feature/phase-3-auth` |
