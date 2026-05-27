@@ -262,9 +262,7 @@ class TestSubmitJob:
     def test_update_pending_returns_409(
         self, client: TestClient, admin_user: User, machine: Machine, script: Script
     ) -> None:
-        descriptor = ScriptDescriptor(
-            name="hello", state=ApprovalState.update_pending
-        )
+        descriptor = ScriptDescriptor(name="hello", state=ApprovalState.update_pending)
         ctx = _agent_client_ctx(descriptor=descriptor)
         with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
             with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
@@ -295,8 +293,9 @@ class TestSubmitJob:
     def test_unknown_script_returns_404(
         self, client: TestClient, admin_user: User, machine: Machine
     ) -> None:
-        with patch("control_station_lite.server.api.jobs.AgentClient"), patch(
-            "control_station_lite.server.api.jobs.get_ssh_pool"
+        with (
+            patch("control_station_lite.server.api.jobs.AgentClient"),
+            patch("control_station_lite.server.api.jobs.get_ssh_pool"),
         ):
             resp = client.post(
                 f"/api/machines/{machine.id}/jobs",
@@ -305,9 +304,7 @@ class TestSubmitJob:
             )
         assert resp.status_code == 404
 
-    def test_unknown_machine_returns_404(
-        self, client: TestClient, admin_user: User
-    ) -> None:
+    def test_unknown_machine_returns_404(self, client: TestClient, admin_user: User) -> None:
         resp = client.post(
             "/api/machines/9999/jobs",
             headers=_admin_h(admin_user),
@@ -383,9 +380,7 @@ class TestGetJob:
         assert resp.status_code == 200
         assert resp.json()["job_uuid"] == "test-uuid"
 
-    def test_not_found_returns_404(
-        self, client: TestClient, admin_user: User
-    ) -> None:
+    def test_not_found_returns_404(self, client: TestClient, admin_user: User) -> None:
         resp = client.get("/api/jobs/no-such-uuid", headers=_admin_h(admin_user))
         assert resp.status_code == 404
 
@@ -488,9 +483,7 @@ class TestKillJob:
         resp = client.post(f"/api/jobs/{job.job_uuid}/kill", headers=_admin_h(admin_user))
         assert resp.status_code == 400
 
-    def test_kill_unknown_job_returns_404(
-        self, client: TestClient, admin_user: User
-    ) -> None:
+    def test_kill_unknown_job_returns_404(self, client: TestClient, admin_user: User) -> None:
         resp = client.post("/api/jobs/no-such-uuid/kill", headers=_admin_h(admin_user))
         assert resp.status_code == 404
 
@@ -575,9 +568,7 @@ class TestListJobs:
         asyncio.get_event_loop().run_until_complete(
             self._seed_jobs(db_session, machine, script, admin_user)
         )
-        resp = client.get(
-            f"/api/jobs?machine_id={machine.id}", headers=_admin_h(admin_user)
-        )
+        resp = client.get(f"/api/jobs?machine_id={machine.id}", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert all(j["machine_id"] == machine.id for j in resp.json())
 
@@ -697,9 +688,7 @@ class TestStreamLogs:
                     assert resp.status_code == 200
                     assert "text/event-stream" in resp.headers["content-type"]
 
-    def test_stream_not_found_returns_404(
-        self, client: TestClient, admin_user: User
-    ) -> None:
+    def test_stream_not_found_returns_404(self, client: TestClient, admin_user: User) -> None:
         resp = client.get("/api/jobs/no-such-uuid/stream", headers=_admin_h(admin_user))
         assert resp.status_code == 404
 

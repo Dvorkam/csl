@@ -166,9 +166,7 @@ async def submit_job(
         try:
             agent_resp = await client.submit_job(request)
         except AgentClientError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     assert agent_resp is not None
     job = Job(

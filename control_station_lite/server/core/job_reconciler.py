@@ -40,9 +40,7 @@ _ACTIVE_STATUSES = (JobStatus.running, JobStatus.pending)
 async def reconcile_once(factory: async_sessionmaker[AsyncSession], master_key: bytes) -> None:
     """Run a single reconciliation pass."""
     async with factory() as session:
-        result = await session.execute(
-            select(Job).where(Job.status.in_(_ACTIVE_STATUSES))
-        )
+        result = await session.execute(select(Job).where(Job.status.in_(_ACTIVE_STATUSES)))
         jobs = list(result.scalars().all())
 
     if not jobs:

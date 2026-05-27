@@ -432,9 +432,7 @@ class TestE2EApprovalThenRunWindows:
                 bridge = _make_agent_bridge(agent)
 
                 # Step 1: submit — script is absent, gets staged → pending
-                with patch(
-                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
-                ):
+                with patch("control_station_lite.server.api.jobs.AgentClient", return_value=bridge):
                     with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
                         resp = server_client.post(
                             f"/api/machines/{server_machine.id}/jobs",
@@ -449,9 +447,7 @@ class TestE2EApprovalThenRunWindows:
                 approvals.approve("greet.ps1")
 
                 # Step 3: submit again — now approved; powershell runs the script
-                with patch(
-                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
-                ):
+                with patch("control_station_lite.server.api.jobs.AgentClient", return_value=bridge):
                     with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
                         resp = server_client.post(
                             f"/api/machines/{server_machine.id}/jobs",
@@ -505,9 +501,7 @@ class TestE2EPersistentJobStreamKillWindows:
 
                 bridge = _make_agent_bridge(agent)
 
-                with patch(
-                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
-                ):
+                with patch("control_station_lite.server.api.jobs.AgentClient", return_value=bridge):
                     with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
                         resp = server_client.post(
                             f"/api/machines/{server_machine.id}/jobs",
@@ -518,9 +512,7 @@ class TestE2EPersistentJobStreamKillWindows:
                 job_uuid = resp.json()["job_uuid"]
                 assert resp.json()["persistent"] is True
 
-                with patch(
-                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
-                ):
+                with patch("control_station_lite.server.api.jobs.AgentClient", return_value=bridge):
                     with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
                         kill_resp = server_client.post(
                             f"/api/jobs/{job_uuid}/kill",
@@ -568,9 +560,7 @@ class TestE2ERejectedScriptWindows:
 
                 bridge = _make_agent_bridge(agent)
 
-                with patch(
-                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
-                ):
+                with patch("control_station_lite.server.api.jobs.AgentClient", return_value=bridge):
                     with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
                         resp = server_client.post(
                             f"/api/machines/{server_machine.id}/jobs",
