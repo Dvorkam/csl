@@ -112,4 +112,16 @@ app.include_router(admin.router)
 
 
 def main() -> None:
-    uvicorn.run("control_station_lite.server.main:app", host="127.0.0.1", port=8000, reload=False)
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="csl-server")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--reload", action="store_true", default=False)
+    args = parser.parse_args()
+    uvicorn.run(
+        "control_station_lite.server.main:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
