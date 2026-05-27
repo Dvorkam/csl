@@ -237,3 +237,14 @@ def test_ping_badge_404_machine_still_returns_offline_badge(
     resp = client.get("/machines/9999/ping-badge", cookies=_auth_cookies(admin_user))
     assert resp.status_code == 200
     assert b"Offline" in resp.content
+
+
+def test_ping_badge_non_admin_without_bookmark_returns_offline(
+    client: TestClient,
+    regular_user: User,
+    machine: Machine,
+) -> None:
+    # regular_user has no bookmark → access control returns offline badge without SSH attempt
+    resp = client.get(f"/machines/{machine.id}/ping-badge", cookies=_auth_cookies(regular_user))
+    assert resp.status_code == 200
+    assert b"Offline" in resp.content

@@ -189,7 +189,7 @@ def test_logout_clears_access_cookie(client: TestClient, user: User) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Unauthenticated access to protected routes
+# Unauthenticated / invalid token access to protected routes
 # ---------------------------------------------------------------------------
 
 
@@ -197,3 +197,64 @@ def test_dashboard_unauthenticated_redirects_to_login(client: TestClient) -> Non
     resp = client.get("/")
     assert resp.status_code == 302
     assert "/login" in resp.headers["location"]
+
+
+def test_dashboard_invalid_token_redirects_to_login(client: TestClient) -> None:
+    resp = client.get("/", cookies={"csl_access": "not.a.valid.jwt"})
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["location"]
+
+
+def test_dashboard_unknown_user_redirects_to_login(client: TestClient) -> None:
+    from control_station_lite.server.auth.jwt import create_access_token
+
+    # Token for user id 99999 — does not exist in the DB
+    token = create_access_token(99999, "user")
+    resp = client.get("/", cookies={"csl_access": token})
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["location"]
+
+
+# ---------------------------------------------------------------------------
+# web_require_admin
+# ---------------------------------------------------------------------------
+
+
+def test_require_admin_rejects_non_admin(client: TestClient, user: User) -> None:
+    from control_station_lite.server.auth.jwt import create_access_token
+    from control_station_lite.server.main import app
+    from control_station_lite.server.web.deps import web_require_admin
+
+    token = create_access_token(user.id, user.role)
+
+    # Temporarily add a test-only admin-only route to exercise web_require_admin
+    from fastapi import Depends
+    from fastapi.responses import PlainTextResponse
+
+    @app.get("/test-admin-only", include_in_schema=False)
+    async def _test_admin(_u: User = Depends(web_require_admin)) -> PlainTextResponse:
+        return PlainTextResponse("ok")
+
+    try:
+        resp = client.get("/test-admin-only", cookies={"csl_access": token})
+        assert resp.status_code == 403
+    finally:
+        app.routes[:] = [r for r in app.routes if getattr(r, "path", None) != "/test-admin-only"]
+
+
+# ---------------------------------------------------------------------------
+# Flash cookie round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_pop_flash_returns_flash_and_clears_cookie(client: TestClient, user: User) -> None:
+    from control_station_lite.server.auth.jwt import create_access_token
+
+    token = create_access_token(user.id, user.role)
+    # Set a flash cookie and check the dashboard renders it
+    resp = client.get(
+        "/",
+        cookies={"csl_access": token, "_flash": "info|Hello from flash"},
+    )
+    assert resp.status_code == 200
+    assert b"Hello from flash" in resp.content

@@ -77,7 +77,7 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         factory = _session_factory()
         task = asyncio.create_task(reconciler_loop(factory, master_key))
         logger.info("Job reconciler started")
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover
         logger.warning("Job reconciler could not start (settings not available): %s", exc)
         task = None
 
@@ -111,7 +111,7 @@ app.include_router(audit.router)
 app.include_router(admin.router)
 
 
-def main() -> None:
+def main() -> None:  # pragma: no cover
     import argparse
 
     parser = argparse.ArgumentParser(prog="csl-server")

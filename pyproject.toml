@@ -113,6 +113,7 @@ markers = [
 branch = true
 source = ["control_station_lite"]
 omit = ["*/agent/__main__.py"]
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
 # Exclusions documented here per AGENTS.md; 85% line coverage enforced in CI

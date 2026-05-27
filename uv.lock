@@ -391,7 +391,7 @@ wheels = [
 [[package]]
 name = "control-station-lite"
 version = "0.1.2"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
