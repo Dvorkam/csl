@@ -37,7 +37,7 @@ csl-admin  = "control_station_lite.server.cli:main"
 dev = [
     "mypy>=1.10",
     "pre-commit>=3.7",
-    "ruff>=0.11",
+    "ruff==0.15.12",
     "types-pyyaml>=6.0.12.20260510",
 ]
 test = [

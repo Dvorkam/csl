@@ -451,7 +451,7 @@ provides-extras = ["server", "agent"]
 dev = [
     { name = "mypy", specifier = ">=1.10" },
     { name = "pre-commit", specifier = ">=3.7" },
-    { name = "ruff", specifier = ">=0.11" },
+    { name = "ruff", specifier = "==0.15.12" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260510" },
 ]
 test = [

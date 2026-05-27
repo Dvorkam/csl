@@ -9,7 +9,7 @@ import base64
 import os
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -171,9 +171,7 @@ class TestListScriptsEndpoint:
 
 
 class TestGetScriptEndpoint:
-    def test_returns_script(
-        self, client: TestClient, regular_user: User, script: Script
-    ) -> None:
+    def test_returns_script(self, client: TestClient, regular_user: User, script: Script) -> None:
         resp = client.get("/api/scripts/hello", headers=_user_h(regular_user))
         assert resp.status_code == 200
         data = resp.json()
@@ -297,9 +295,7 @@ class TestUpdateScriptEndpoint:
 
 
 class TestDeleteScriptEndpoint:
-    def test_deletes_script(
-        self, client: TestClient, admin_user: User, script: Script
-    ) -> None:
+    def test_deletes_script(self, client: TestClient, admin_user: User, script: Script) -> None:
         resp = client.delete("/api/scripts/hello", headers=_admin_h(admin_user))
         assert resp.status_code == 204
         assert client.get("/api/scripts/hello", headers=_admin_h(admin_user)).status_code == 404
@@ -353,18 +349,14 @@ class TestSyncScript:
     async def test_absent_auto_approved_returns_approved(
         self, db_session: AsyncSession, script: Script, machine: Machine
     ) -> None:
-        client = _mock_client(
-            agent_state=ApprovalState.absent, stage_result=ApprovalState.approved
-        )
+        client = _mock_client(agent_state=ApprovalState.absent, stage_result=ApprovalState.approved)
         result = await sync_script(machine, script, client, db_session)
         assert result == ApprovalState.approved
 
     async def test_already_approved_matching_md5_no_stage(
         self, db_session: AsyncSession, script: Script, machine: Machine
     ) -> None:
-        client = _mock_client(
-            agent_state=ApprovalState.approved, approved_md5=script.md5
-        )
+        client = _mock_client(agent_state=ApprovalState.approved, approved_md5=script.md5)
         result = await sync_script(machine, script, client, db_session)
         assert result == ApprovalState.approved
         client.stage_script.assert_not_awaited()
@@ -408,9 +400,7 @@ class TestSyncScript:
     async def test_upserts_cache_row_on_first_sync(
         self, db_session: AsyncSession, script: Script, machine: Machine
     ) -> None:
-        client = _mock_client(
-            agent_state=ApprovalState.approved, approved_md5=script.md5
-        )
+        client = _mock_client(agent_state=ApprovalState.approved, approved_md5=script.md5)
         await sync_script(machine, script, client, db_session)
         from sqlalchemy import select
 
@@ -429,16 +419,12 @@ class TestSyncScript:
         self, db_session: AsyncSession, script: Script, machine: Machine
     ) -> None:
         # First sync: absent → pending
-        client1 = _mock_client(
-            agent_state=ApprovalState.absent, stage_result=ApprovalState.pending
-        )
+        client1 = _mock_client(agent_state=ApprovalState.absent, stage_result=ApprovalState.pending)
         await sync_script(machine, script, client1, db_session)
         await db_session.commit()
 
         # Second sync: now approved
-        client2 = _mock_client(
-            agent_state=ApprovalState.approved, approved_md5=script.md5
-        )
+        client2 = _mock_client(agent_state=ApprovalState.approved, approved_md5=script.md5)
         await sync_script(machine, script, client2, db_session)
         await db_session.commit()
 

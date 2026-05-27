@@ -15,7 +15,7 @@ from control_station_lite.server.core.script_registry import (
     list_scripts,
     update_script,
 )
-from control_station_lite.server.db.models import Base, Script
+from control_station_lite.server.db.models import Base
 
 
 @pytest.fixture
@@ -85,9 +85,7 @@ class TestCreateScript:
         await create_script(name="dup", content="a", meta_yaml=None, user_id=1, session=session)
         await session.commit()
         with pytest.raises(ScriptRegistryError, match="already exists"):
-            await create_script(
-                name="dup", content="b", meta_yaml=None, user_id=1, session=session
-            )
+            await create_script(name="dup", content="b", meta_yaml=None, user_id=1, session=session)
 
     async def test_invalid_meta_raises(self, session: AsyncSession) -> None:
         with pytest.raises(ScriptRegistryError, match="invalid meta YAML"):
@@ -143,9 +141,7 @@ class TestUpdateScript:
     async def test_updates_content_and_md5(self, session: AsyncSession) -> None:
         await create_script(name="s", content="old", meta_yaml=None, user_id=1, session=session)
         await session.commit()
-        s = await update_script(
-            name="s", content="new", meta_yaml=None, user_id=1, session=session
-        )
+        s = await update_script(name="s", content="new", meta_yaml=None, user_id=1, session=session)
         await session.commit()
         assert s.content == "new"
         assert s.md5 == _compute_md5("new")
@@ -161,7 +157,9 @@ class TestUpdateScript:
 
     async def test_missing_script_raises(self, session: AsyncSession) -> None:
         with pytest.raises(ScriptRegistryError, match="not found"):
-            await update_script(name="ghost", content="x", meta_yaml=None, user_id=1, session=session)
+            await update_script(
+                name="ghost", content="x", meta_yaml=None, user_id=1, session=session
+            )
 
     async def test_invalid_meta_raises(self, session: AsyncSession) -> None:
         await create_script(name="s", content="x", meta_yaml=None, user_id=1, session=session)
