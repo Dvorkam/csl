@@ -125,10 +125,10 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 ## Phase 7 — Built-in actions
 
-- [ ] **7.1** Implement `server/core/magic_packet.py`: build and broadcast Magic Packet from a MAC address. Configurable broadcast address.
-- [ ] **7.2** Implement `server/api/builtin.py`:
+- [x] **7.1** Implement `server/core/magic_packet.py`: build and broadcast Magic Packet from a MAC address. Configurable broadcast address.
+- [x] **7.2** Implement `server/api/builtin.py`:
   - `POST /api/machines/{id}/builtin/wol`.
-- [ ] **7.3** Audit-log integration.
+- [x] **7.3** Audit-log integration.
 
 ---
 
