@@ -193,6 +193,12 @@ class AgentClient:
         resp.raise_for_status()
         return JobStatusResponse.model_validate(resp.json())
 
+    async def get_job_status(self, job_uuid: str) -> JobStatusResponse:
+        assert self._http is not None
+        resp = await self._http.get(f"/jobs/{job_uuid}")
+        resp.raise_for_status()
+        return JobStatusResponse.model_validate(resp.json())
+
     async def kill_job(self, job_uuid: str) -> None:
         assert self._http is not None
         resp = await self._http.delete(f"/jobs/{job_uuid}")

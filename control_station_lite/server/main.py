@@ -9,6 +9,11 @@
 # (at your option) any later version, with an additional permission for
 # distribution through app stores (see LICENSE).
 
+import asyncio
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
 
@@ -22,6 +27,8 @@ from control_station_lite.server.api import (
     machines,
     scripts,
 )
+
+logger = logging.getLogger(__name__)
 
 # Every real endpoint must appear here. Adding an endpoint without updating
 # this set will cause test_expected_endpoints_matches_openapi to fail.
@@ -38,14 +45,47 @@ _EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
     ("DELETE", "/api/machines/{machine_id}/bookmark"),
     ("GET", "/api/machines/{machine_id}/ping"),
     ("GET", "/api/machines/{machine_id}/agent-status"),
+    ("POST", "/api/machines/{machine_id}/jobs"),
     ("GET", "/api/scripts"),
     ("GET", "/api/scripts/{name}"),
     ("POST", "/api/scripts"),
     ("PUT", "/api/scripts/{name}"),
     ("DELETE", "/api/scripts/{name}"),
+    ("POST", "/api/jobs/{job_uuid}/kill"),
+    ("GET", "/api/jobs/{job_uuid}"),
+    ("GET", "/api/jobs/{job_uuid}/stream"),
+    ("GET", "/api/jobs"),
 }
 
-app = FastAPI(title="control-station-lite")
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
+    from control_station_lite.server.config import get_settings
+    from control_station_lite.server.core.job_reconciler import reconciler_loop
+    from control_station_lite.server.db.session import _session_factory
+
+    try:
+        settings = get_settings()
+        master_key = settings.read_master_key()
+        factory = _session_factory()
+        task = asyncio.create_task(reconciler_loop(factory, master_key))
+        logger.info("Job reconciler started")
+    except Exception as exc:
+        logger.warning("Job reconciler could not start (settings not available): %s", exc)
+        task = None
+
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+app = FastAPI(title="control-station-lite", lifespan=_lifespan)
 
 app.include_router(health.router)
 app.include_router(auth.router)

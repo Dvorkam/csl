@@ -109,17 +109,17 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 ## Phase 6 — Script execution and jobs
 
-- [ ] **6.1** Implement `server/api/jobs.py`:
+- [x] **6.1** Implement `server/api/jobs.py`:
   - `POST /api/machines/{id}/jobs`: submit a job. Body includes `script_name`, `params`. Returns `job_uuid` on success. On approval-related failures, returns a structured error: `pending_approval (new)`, `pending_approval (update)`, or `rejected`, with the current agent state so the UI can render meaningfully.
   - `GET /api/jobs/{job_uuid}`: status.
   - `GET /api/jobs/{job_uuid}/stream`: SSE proxy to agent log stream.
   - `POST /api/jobs/{job_uuid}/kill`: kill a persistent job.
   - `GET /api/jobs`: history with filters.
-- [ ] **6.2** Wire script-sync into the submit-job path: every submission triggers a state check + (if needed) stage attempt before forwarding to the agent's `POST /jobs`. Submissions where the result is still not `approved` after staging return a structured pending-approval error rather than running.
-- [ ] **6.3** Job status reconciliation: periodic background task on the control station polls agents that have known running jobs; updates `jobs` table when state changes.
-- [ ] **6.4** End-to-end test: stage a script, approve it via `csl-agent approvals approve`, submit, observe completion.
-- [ ] **6.5** End-to-end test: submit a persistent script (pre-approved), stream logs, kill it.
-- [ ] **6.6** End-to-end test: submit a script that's been rejected on the target — verify the control station surfaces the rejection clearly and does not retry.
+- [x] **6.2** Wire script-sync into the submit-job path: every submission triggers a state check + (if needed) stage attempt before forwarding to the agent's `POST /jobs`. Submissions where the result is still not `approved` after staging return a structured pending-approval error rather than running.
+- [x] **6.3** Job status reconciliation: periodic background task on the control station polls agents that have known running jobs; updates `jobs` table when state changes.
+- [x] **6.4** End-to-end test: stage a script, approve it via `csl-agent approvals approve`, submit, observe completion.
+- [x] **6.5** End-to-end test: submit a persistent script (pre-approved), stream logs, kill it.
+- [x] **6.6** End-to-end test: submit a script that's been rejected on the target — verify the control station surfaces the rejection clearly and does not retry.
 
 ---
 
