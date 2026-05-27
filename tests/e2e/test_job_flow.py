@@ -41,6 +41,13 @@ _SCRIPT_MD5 = hashlib.md5(_SCRIPT_CONTENT.encode()).hexdigest()
 _META = "description: greet\npersistent: false\n"
 _PERSISTENT_META = "description: llama\npersistent: true\n"
 
+# Windows: script name carries .ps1 so find_script resolves it and
+# build_command selects powershell.  Matches the pattern in test_approval_flow.py.
+_PS1_CONTENT = 'Write-Output "hello from csl"\n'
+_PS1_MD5 = hashlib.md5(_PS1_CONTENT.encode()).hexdigest()
+_PS1_PERSISTENT_CONTENT = "Start-Sleep -Seconds 60\n"
+_PS1_PERSISTENT_MD5 = hashlib.md5(_PS1_PERSISTENT_CONTENT.encode()).hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -385,5 +392,193 @@ class TestE2ERejectedScript:
                 assert detail["approval_error"] == "rejected"
                 assert detail["agent_state"] == "rejected"
 
-                # Verify submit was NOT called on the agent (no /jobs POST)
                 # The approval check happens before submit_job — so the agent never received a job
+
+
+# ---------------------------------------------------------------------------
+# Windows equivalents — identical flow; script names carry .ps1 extension so
+# find_script resolves them and build_command selects powershell.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.windows_only
+class TestE2EApprovalThenRunWindows:
+    def test_stage_approve_submit_completes(
+        self,
+        tmp_path: Path,
+        db_session: AsyncSession,
+        server_client: TestClient,
+        server_machine: Machine,
+        admin_user: User,
+    ) -> None:
+        import asyncio
+
+        cfg = AgentConfig(agent=AgentSection(csl_dir=tmp_path / ".csl"))
+
+        async def _create_script() -> Script:
+            return await create_script(
+                name="greet.ps1",
+                content=_PS1_CONTENT,
+                meta_yaml=_META,
+                user_id=admin_user.id,
+                session=db_session,
+            )
+
+        asyncio.get_event_loop().run_until_complete(_create_script())
+        asyncio.get_event_loop().run_until_complete(db_session.commit())
+
+        with patch("control_station_lite.agent.main.load_config", return_value=cfg):
+            with TestClient(agent_app) as agent:
+                bridge = _make_agent_bridge(agent)
+
+                # Step 1: submit — script is absent, gets staged → pending
+                with patch(
+                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
+                ):
+                    with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                        resp = server_client.post(
+                            f"/api/machines/{server_machine.id}/jobs",
+                            headers=_admin_h(admin_user),
+                            json={"script_name": "greet.ps1", "params": {}},
+                        )
+                assert resp.status_code == 409
+                assert resp.json()["detail"]["approval_error"] == "pending_approval (new)"
+
+                # Step 2: approve directly (same as `csl-agent approvals approve`)
+                approvals: ApprovalsManager = agent.app.state.approvals  # type: ignore[attr-defined]
+                approvals.approve("greet.ps1")
+
+                # Step 3: submit again — now approved; powershell runs the script
+                with patch(
+                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
+                ):
+                    with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                        resp = server_client.post(
+                            f"/api/machines/{server_machine.id}/jobs",
+                            headers=_admin_h(admin_user),
+                            json={"script_name": "greet.ps1", "params": {}},
+                        )
+                assert resp.status_code == 202
+                data = resp.json()
+                assert data["status"] in (JobStatus.completed, JobStatus.failed)
+
+
+@pytest.mark.windows_only
+class TestE2EPersistentJobStreamKillWindows:
+    def test_persistent_job_kill(
+        self,
+        tmp_path: Path,
+        db_session: AsyncSession,
+        server_client: TestClient,
+        server_machine: Machine,
+        admin_user: User,
+    ) -> None:
+        import asyncio
+
+        cfg = AgentConfig(agent=AgentSection(csl_dir=tmp_path / ".csl"))
+
+        async def _create_script() -> Script:
+            return await create_script(
+                name="sleeper.ps1",
+                content=_PS1_PERSISTENT_CONTENT,
+                meta_yaml=_PERSISTENT_META,
+                user_id=admin_user.id,
+                session=db_session,
+            )
+
+        asyncio.get_event_loop().run_until_complete(_create_script())
+        asyncio.get_event_loop().run_until_complete(db_session.commit())
+
+        with patch("control_station_lite.agent.main.load_config", return_value=cfg):
+            with TestClient(agent_app) as agent:
+                approvals: ApprovalsManager = agent.app.state.approvals  # type: ignore[attr-defined]
+                stage_resp = agent.post(
+                    "/scripts/sleeper.ps1/stage",
+                    json={
+                        "content": _PS1_PERSISTENT_CONTENT,
+                        "md5": _PS1_PERSISTENT_MD5,
+                        "meta_yaml": _PERSISTENT_META,
+                    },
+                )
+                assert stage_resp.status_code == 200
+                approvals.approve("sleeper.ps1")
+
+                bridge = _make_agent_bridge(agent)
+
+                with patch(
+                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
+                ):
+                    with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                        resp = server_client.post(
+                            f"/api/machines/{server_machine.id}/jobs",
+                            headers=_admin_h(admin_user),
+                            json={"script_name": "sleeper.ps1", "params": {}},
+                        )
+                assert resp.status_code == 202
+                job_uuid = resp.json()["job_uuid"]
+                assert resp.json()["persistent"] is True
+
+                with patch(
+                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
+                ):
+                    with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                        kill_resp = server_client.post(
+                            f"/api/jobs/{job_uuid}/kill",
+                            headers=_admin_h(admin_user),
+                        )
+                assert kill_resp.status_code == 204
+
+
+@pytest.mark.windows_only
+class TestE2ERejectedScriptWindows:
+    def test_rejected_script_returns_structured_error(
+        self,
+        tmp_path: Path,
+        db_session: AsyncSession,
+        server_client: TestClient,
+        server_machine: Machine,
+        admin_user: User,
+    ) -> None:
+        import asyncio
+
+        cfg = AgentConfig(agent=AgentSection(csl_dir=tmp_path / ".csl"))
+
+        async def _create_script() -> Script:
+            return await create_script(
+                name="badscript.ps1",
+                content=_PS1_CONTENT,
+                meta_yaml=_META,
+                user_id=admin_user.id,
+                session=db_session,
+            )
+
+        asyncio.get_event_loop().run_until_complete(_create_script())
+        asyncio.get_event_loop().run_until_complete(db_session.commit())
+
+        with patch("control_station_lite.agent.main.load_config", return_value=cfg):
+            with TestClient(agent_app) as agent:
+                stage_resp = agent.post(
+                    "/scripts/badscript.ps1/stage",
+                    json={"content": _PS1_CONTENT, "md5": _PS1_MD5},
+                )
+                assert stage_resp.status_code == 200
+
+                approvals: ApprovalsManager = agent.app.state.approvals  # type: ignore[attr-defined]
+                approvals.reject("badscript.ps1")
+
+                bridge = _make_agent_bridge(agent)
+
+                with patch(
+                    "control_station_lite.server.api.jobs.AgentClient", return_value=bridge
+                ):
+                    with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                        resp = server_client.post(
+                            f"/api/machines/{server_machine.id}/jobs",
+                            headers=_admin_h(admin_user),
+                            json={"script_name": "badscript.ps1", "params": {}},
+                        )
+
+                assert resp.status_code == 409
+                detail = resp.json()["detail"]
+                assert detail["approval_error"] == "rejected"
+                assert detail["agent_state"] == "rejected"
