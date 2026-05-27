@@ -90,20 +90,20 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 ## Phase 5 — Script library
 
-- [ ] **5.1** Implement `server/core/script_registry.py`: CRUD over the `scripts` table; on edit, recompute MD5. Validates the metadata YAML at write time.
-- [ ] **5.2** Implement `server/api/scripts.py`:
+- [x] **5.1** Implement `server/core/script_registry.py`: CRUD over the `scripts` table; on edit, recompute MD5. Validates the metadata YAML at write time.
+- [x] **5.2** Implement `server/api/scripts.py`:
   - `GET /api/scripts`: list (any authenticated user).
   - `GET /api/scripts/{name}`: detail with metadata.
   - `POST /api/scripts` (admin): create.
   - `PUT /api/scripts/{name}` (admin): update.
   - `DELETE /api/scripts/{name}` (admin).
-- [ ] **5.3** Implement `server/core/script_sync.py`:
+- [x] **5.3** Implement `server/core/script_sync.py`:
   - For a (machine, script) pair: query the agent for current state via `GET /scripts/{name}/state`.
   - Map agent response to one of: `approved` (md5 matches), `approved_stale` (approved md5 doesn't match canonical — needs update), `pending`, `update_pending`, `rejected`, `absent`.
   - If the script needs to be staged (`absent` or canonical differs from approved): call `POST /scripts/{name}/stage` with the new content.
   - **The agent decides whether staging results in immediate approval (via auto-approve policy) or `pending` state. The control station never bypasses approval.**
   - Update `script_target_state` cache from each response.
-- [ ] **5.4** Tests covering: stage when absent, stage when update needed, agent reports rejected, agent reports already-approved, auto-approved scripts complete in one round-trip.
+- [x] **5.4** Tests covering: stage when absent, stage when update needed, agent reports rejected, agent reports already-approved, auto-approved scripts complete in one round-trip.
 
 ---
 
