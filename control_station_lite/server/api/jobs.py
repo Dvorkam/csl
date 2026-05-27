@@ -287,5 +287,5 @@ async def list_jobs(
             return []
         q = q.where(Job.script_id == script.id)
     q = q.order_by(Job.started_at.desc()).limit(limit)
-    result = await session.execute(q)
-    return list(result.scalars().all())
+    jobs_result = await session.execute(q)
+    return list(jobs_result.scalars().all())

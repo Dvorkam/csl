@@ -66,14 +66,14 @@ async def reconcile_once(factory: async_sessionmaker[AsyncSession], master_key: 
                         agent_resp = await client.get_job_status(job.job_uuid)
                         if agent_resp.status not in _ACTIVE_STATUSES:
                             async with factory() as session:
-                                res = await session.execute(
+                                job_res = await session.execute(
                                     select(Job).where(Job.job_uuid == job.job_uuid)
                                 )
-                                row = res.scalar_one_or_none()
-                                if row is not None:
-                                    row.status = agent_resp.status
-                                    row.ended_at = agent_resp.ended_at
-                                    row.exit_code = agent_resp.exit_code
+                                job_row: Job | None = job_res.scalar_one_or_none()
+                                if job_row is not None:
+                                    job_row.status = agent_resp.status
+                                    job_row.ended_at = agent_resp.ended_at
+                                    job_row.exit_code = agent_resp.exit_code
                                     await session.commit()
                     except AgentClientError as exc:
                         logger.debug("Could not poll job %s: %s", job.job_uuid, exc)
@@ -83,12 +83,12 @@ async def reconcile_once(factory: async_sessionmaker[AsyncSession], master_key: 
                             "Job %s not found on agent, marking failed: %s", job.job_uuid, exc
                         )
                         async with factory() as session:
-                            res = await session.execute(
+                            job_res = await session.execute(
                                 select(Job).where(Job.job_uuid == job.job_uuid)
                             )
-                            row = res.scalar_one_or_none()
-                            if row is not None:
-                                row.status = JobStatus.failed
+                            job_row = job_res.scalar_one_or_none()
+                            if job_row is not None:
+                                job_row.status = JobStatus.failed
                                 await session.commit()
         except Exception as exc:
             logger.warning("Reconciler failed for machine %s: %s", machine.name, exc)
