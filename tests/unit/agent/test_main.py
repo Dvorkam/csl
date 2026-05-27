@@ -114,6 +114,7 @@ _EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
     ("GET", "/scripts/{name}/state"),
     ("POST", "/scripts/{name}/stage"),
     ("POST", "/jobs"),
+    ("GET", "/jobs/{job_uuid}"),
     ("GET", "/jobs/{job_uuid}/stream"),
 }
 

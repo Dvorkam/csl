@@ -186,6 +186,16 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
     )
 
 
+@app.get("/jobs/{job_uuid}", response_model=JobStatusResponse)
+async def get_job_status(job_uuid: str, request: Request) -> JobStatusResponse:
+    """Return the current status of a persistent job."""
+    pm: ProcessManager = request.app.state.process_manager
+    try:
+        return pm.get_status(job_uuid)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found") from exc
+
+
 @app.get("/jobs/{job_uuid}/stream", response_class=StreamingResponse)
 async def stream_job_logs(
     job_uuid: str,
