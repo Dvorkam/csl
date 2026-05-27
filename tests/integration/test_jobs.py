@@ -1,25 +1,28 @@
 """Integration tests for Phase 6 — jobs API.
 
-6.1 — REST endpoints (via TestClient, real in-memory SQLite, mocked AgentClient)
+6.1 — REST endpoints (async httpx client, real in-memory SQLite, mocked AgentClient)
 6.2 — sync_script wired into submit path
 6.3 — reconciler logic tested directly
 """
 
+import asyncio
 import json
 import os
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from control_station_lite.server.auth.jwt import create_access_token
 from control_station_lite.server.auth.password import hash_password
+from control_station_lite.server.core.agent_client import AgentClientError
 from control_station_lite.server.core.crypto import encrypt
-from control_station_lite.server.core.job_reconciler import reconcile_once
+from control_station_lite.server.core.job_reconciler import reconcile_once, reconciler_loop
 from control_station_lite.server.core.script_registry import create_script
 from control_station_lite.server.db.models import Base, Job, Machine, Script, User
 from control_station_lite.server.db.session import get_session
@@ -60,7 +63,7 @@ def _settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-async def db_session() -> AsyncSession:
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -71,12 +74,13 @@ async def db_session() -> AsyncSession:
 
 
 @pytest.fixture
-def client(db_session: AsyncSession) -> TestClient:
-    async def _override() -> AsyncSession:
+async def client(db_session: AsyncSession) -> AsyncGenerator[httpx.AsyncClient, None]:
+    async def _override() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
     app.dependency_overrides[get_session] = _override
-    with TestClient(app, base_url="https://testserver", raise_server_exceptions=True) as c:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as c:
         yield c
     app.dependency_overrides.pop(get_session, None)
 
@@ -200,9 +204,7 @@ def _agent_client_ctx(
     )
     mock_client.kill_job = AsyncMock()
 
-    # stream_logs must be an async generator function (not AsyncMock) so that
-    # `async for line in client.stream_logs(uuid)` works without awaiting first.
-    async def _stream_logs(*_args: object, **_kwargs: object):  # type: ignore[return]
+    async def _stream_logs(*_args: object, **_kwargs: object) -> AsyncGenerator[str, None]:
         for item in ["line one", "line two"]:
             yield item
 
@@ -214,14 +216,46 @@ def _agent_client_ctx(
     return ctx
 
 
+async def _make_job(
+    db_session: AsyncSession,
+    machine: Machine,
+    script: Script,
+    user: User,
+    *,
+    job_uuid: str = "test-uuid",
+    status: JobStatus = JobStatus.completed,
+    persistent: bool = False,
+) -> Job:
+    job = Job(
+        job_uuid=job_uuid,
+        machine_id=machine.id,
+        script_id=script.id,
+        user_id=user.id,
+        params_json="{}",
+        status=status,
+        persistent=persistent,
+        started_at=_now(),
+        ended_at=_now() if status == JobStatus.completed else None,
+        exit_code=0 if status == JobStatus.completed else None,
+    )
+    db_session.add(job)
+    await db_session.commit()
+    await db_session.refresh(job)
+    return job
+
+
 # ---------------------------------------------------------------------------
 # 6.1 — Submit job
 # ---------------------------------------------------------------------------
 
 
 class TestSubmitJob:
-    def test_approved_script_creates_job(
-        self, client: TestClient, admin_user: User, machine: Machine, script: Script
+    async def test_approved_script_creates_job(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
     ) -> None:
         descriptor = ScriptDescriptor(
             name="hello", state=ApprovalState.approved, approved_md5=script.md5
@@ -229,7 +263,7 @@ class TestSubmitJob:
         ctx = _agent_client_ctx(descriptor=descriptor)
         with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
             with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                resp = client.post(
+                resp = await client.post(
                     f"/api/machines/{machine.id}/jobs",
                     headers=_admin_h(admin_user),
                     json={"script_name": "hello", "params": {}},
@@ -241,15 +275,19 @@ class TestSubmitJob:
         assert data["status"] in ("completed", "running", "failed")
         assert "job_uuid" in data
 
-    def test_pending_script_returns_409(
-        self, client: TestClient, admin_user: User, machine: Machine, script: Script
+    async def test_pending_script_returns_409(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
     ) -> None:
         descriptor = ScriptDescriptor(name="hello", state=ApprovalState.absent)
         stage_resp = StageScriptResponse(name="hello", state=ApprovalState.pending)
         ctx = _agent_client_ctx(descriptor=descriptor, stage_resp=stage_resp)
         with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
             with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                resp = client.post(
+                resp = await client.post(
                     f"/api/machines/{machine.id}/jobs",
                     headers=_admin_h(admin_user),
                     json={"script_name": "hello", "params": {}},
@@ -259,14 +297,18 @@ class TestSubmitJob:
         assert detail["approval_error"] == "pending_approval (new)"
         assert detail["agent_state"] == "pending"
 
-    def test_update_pending_returns_409(
-        self, client: TestClient, admin_user: User, machine: Machine, script: Script
+    async def test_update_pending_returns_409(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
     ) -> None:
         descriptor = ScriptDescriptor(name="hello", state=ApprovalState.update_pending)
         ctx = _agent_client_ctx(descriptor=descriptor)
         with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
             with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                resp = client.post(
+                resp = await client.post(
                     f"/api/machines/{machine.id}/jobs",
                     headers=_admin_h(admin_user),
                     json={"script_name": "hello", "params": {}},
@@ -275,14 +317,18 @@ class TestSubmitJob:
         detail = resp.json()["detail"]
         assert detail["approval_error"] == "pending_approval (update)"
 
-    def test_rejected_script_returns_409(
-        self, client: TestClient, admin_user: User, machine: Machine, script: Script
+    async def test_rejected_script_returns_409(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
     ) -> None:
         descriptor = ScriptDescriptor(name="hello", state=ApprovalState.rejected)
         ctx = _agent_client_ctx(descriptor=descriptor)
         with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
             with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                resp = client.post(
+                resp = await client.post(
                     f"/api/machines/{machine.id}/jobs",
                     headers=_admin_h(admin_user),
                     json={"script_name": "hello", "params": {}},
@@ -290,36 +336,109 @@ class TestSubmitJob:
         assert resp.status_code == 409
         assert resp.json()["detail"]["approval_error"] == "rejected"
 
-    def test_unknown_script_returns_404(
-        self, client: TestClient, admin_user: User, machine: Machine
+    async def test_other_approval_state_409(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        """The else branch in _approval_error_response (unknown state string)."""
+        descriptor = ScriptDescriptor(
+            name="hello", state=ApprovalState.approved, approved_md5="old"
+        )
+        ctx = _agent_client_ctx(descriptor=descriptor)
+        # Force sync_script to return an unknown state string via mock
+        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                with patch(
+                    "control_station_lite.server.api.jobs.sync_script",
+                    new=AsyncMock(return_value="some_unknown_state"),
+                ):
+                    resp = await client.post(
+                        f"/api/machines/{machine.id}/jobs",
+                        headers=_admin_h(admin_user),
+                        json={"script_name": "hello", "params": {}},
+                    )
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert detail["agent_state"] == "some_unknown_state"
+        assert detail["approval_error"] == "some_unknown_state"
+
+    async def test_agent_client_error_returns_502(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        descriptor = ScriptDescriptor(
+            name="hello", state=ApprovalState.approved, approved_md5=script.md5
+        )
+        mock_client = MagicMock()
+        mock_client.ensure_agent_running = AsyncMock()
+        mock_client.get_script_state = AsyncMock(return_value=descriptor)
+        mock_client.stage_script = AsyncMock(
+            return_value=StageScriptResponse(name="hello", state=ApprovalState.approved)
+        )
+        mock_client.submit_job = AsyncMock(side_effect=AgentClientError("refused"))
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                resp = await client.post(
+                    f"/api/machines/{machine.id}/jobs",
+                    headers=_admin_h(admin_user),
+                    json={"script_name": "hello", "params": {}},
+                )
+        assert resp.status_code == 502
+
+    async def test_unknown_script_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
     ) -> None:
         with (
             patch("control_station_lite.server.api.jobs.AgentClient"),
             patch("control_station_lite.server.api.jobs.get_ssh_pool"),
         ):
-            resp = client.post(
+            resp = await client.post(
                 f"/api/machines/{machine.id}/jobs",
                 headers=_admin_h(admin_user),
                 json={"script_name": "no-such", "params": {}},
             )
         assert resp.status_code == 404
 
-    def test_unknown_machine_returns_404(self, client: TestClient, admin_user: User) -> None:
-        resp = client.post(
+    async def test_unknown_machine_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+    ) -> None:
+        resp = await client.post(
             "/api/machines/9999/jobs",
             headers=_admin_h(admin_user),
             json={"script_name": "hello", "params": {}},
         )
         assert resp.status_code == 404
 
-    def test_unauthenticated_returns_401(self, client: TestClient, machine: Machine) -> None:
-        resp = client.post(
+    async def test_unauthenticated_returns_401(
+        self,
+        client: httpx.AsyncClient,
+        machine: Machine,
+    ) -> None:
+        resp = await client.post(
             f"/api/machines/{machine.id}/jobs", json={"script_name": "hello", "params": {}}
         )
         assert resp.status_code == 401
 
-    def test_params_passed_through(
-        self, client: TestClient, admin_user: User, machine: Machine, script: Script
+    async def test_params_passed_through(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
     ) -> None:
         descriptor = ScriptDescriptor(
             name="hello", state=ApprovalState.approved, approved_md5=script.md5
@@ -327,7 +446,7 @@ class TestSubmitJob:
         ctx = _agent_client_ctx(descriptor=descriptor)
         with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
             with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                resp = client.post(
+                resp = await client.post(
                     f"/api/machines/{machine.id}/jobs",
                     headers=_admin_h(admin_user),
                     json={"script_name": "hello", "params": {"target": "world"}},
@@ -343,64 +462,38 @@ class TestSubmitJob:
 
 
 class TestGetJob:
-    async def _make_job(
-        self, db_session: AsyncSession, machine: Machine, script: Script, user: User
-    ) -> Job:
-        job = Job(
-            job_uuid="test-uuid",
-            machine_id=machine.id,
-            script_id=script.id,
-            user_id=user.id,
-            params_json="{}",
-            status=JobStatus.completed,
-            persistent=False,
-            started_at=_now(),
-            ended_at=_now(),
-            exit_code=0,
-        )
-        db_session.add(job)
-        await db_session.commit()
-        await db_session.refresh(job)
-        return job
-
-    def test_get_completed_job(
+    async def test_get_completed_job(
         self,
-        client: TestClient,
+        client: httpx.AsyncClient,
         db_session: AsyncSession,
         admin_user: User,
         machine: Machine,
         script: Script,
     ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._make_job(db_session, machine, script, admin_user)
-        )
-        resp = client.get("/api/jobs/test-uuid", headers=_admin_h(admin_user))
+        await _make_job(db_session, machine, script, admin_user)
+        resp = await client.get("/api/jobs/test-uuid", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert resp.json()["job_uuid"] == "test-uuid"
 
-    def test_not_found_returns_404(self, client: TestClient, admin_user: User) -> None:
-        resp = client.get("/api/jobs/no-such-uuid", headers=_admin_h(admin_user))
+    async def test_not_found_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+    ) -> None:
+        resp = await client.get("/api/jobs/no-such-uuid", headers=_admin_h(admin_user))
         assert resp.status_code == 404
 
-    def test_running_job_refreshes_from_agent(
+    async def test_running_job_refreshes_from_agent(
         self,
-        client: TestClient,
+        client: httpx.AsyncClient,
         db_session: AsyncSession,
         admin_user: User,
         machine: Machine,
         script: Script,
     ) -> None:
-        import asyncio
-
-        job = asyncio.get_event_loop().run_until_complete(
-            self._make_job(db_session, machine, script, admin_user)
+        await _make_job(
+            db_session, machine, script, admin_user, status=JobStatus.running, persistent=True
         )
-        # Change the DB status to running
-        asyncio.get_event_loop().run_until_complete(_set_status(db_session, job, JobStatus.running))
-
-        # Mock the agent response to return completed
         completed = _job_resp(job_uuid="test-uuid", s=JobStatus.completed)
         ctx = _agent_client_ctx(
             descriptor=ScriptDescriptor(name="hello", state=ApprovalState.approved),
@@ -408,15 +501,58 @@ class TestGetJob:
         )
         with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
             with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                resp = client.get("/api/jobs/test-uuid", headers=_admin_h(admin_user))
+                resp = await client.get("/api/jobs/test-uuid", headers=_admin_h(admin_user))
 
         assert resp.status_code == 200
         assert resp.json()["status"] == "completed"
 
+    async def test_running_job_agent_error_returns_stale_status(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        """When the agent can't be reached, return the stale DB status without error."""
+        await _make_job(
+            db_session, machine, script, admin_user, status=JobStatus.running, persistent=True
+        )
+        ctx = _agent_client_ctx(
+            descriptor=ScriptDescriptor(name="hello", state=ApprovalState.approved),
+        )
+        ctx.__aenter__ = AsyncMock(side_effect=Exception("unreachable"))
+        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                resp = await client.get("/api/jobs/test-uuid", headers=_admin_h(admin_user))
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
 
-async def _set_status(session: AsyncSession, job: Job, s: JobStatus) -> None:
-    job.status = s
-    await session.commit()
+    async def test_running_job_machine_not_in_db(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        script: Script,
+    ) -> None:
+        """Running job whose machine was deleted returns stale status."""
+        job = Job(
+            job_uuid="orphan-uuid",
+            machine_id=99999,
+            script_id=script.id,
+            user_id=admin_user.id,
+            params_json="{}",
+            status=JobStatus.running,
+            persistent=False,
+            started_at=_now(),
+            ended_at=None,
+            exit_code=None,
+        )
+        db_session.add(job)
+        await db_session.commit()
+        resp = await client.get("/api/jobs/orphan-uuid", headers=_admin_h(admin_user))
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
 
 
 # ---------------------------------------------------------------------------
@@ -425,14 +561,66 @@ async def _set_status(session: AsyncSession, job: Job, s: JobStatus) -> None:
 
 
 class TestKillJob:
-    async def _make_persistent_job(
-        self, db_session: AsyncSession, machine: Machine, script: Script, user: User
-    ) -> Job:
-        job = Job(
+    async def test_kill_persistent_job(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        await _make_job(
+            db_session,
+            machine,
+            script,
+            admin_user,
             job_uuid="persist-uuid",
-            machine_id=machine.id,
+            status=JobStatus.running,
+            persistent=True,
+        )
+        ctx = _agent_client_ctx(
+            descriptor=ScriptDescriptor(name="hello", state=ApprovalState.approved)
+        )
+        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                resp = await client.post(
+                    "/api/jobs/persist-uuid/kill", headers=_admin_h(admin_user)
+                )
+        assert resp.status_code == 204
+
+    async def test_kill_nonpersistent_returns_400(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        job = await _make_job(db_session, machine, script, admin_user, job_uuid="oneoff-uuid")
+        resp = await client.post(f"/api/jobs/{job.job_uuid}/kill", headers=_admin_h(admin_user))
+        assert resp.status_code == 400
+
+    async def test_kill_unknown_job_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+    ) -> None:
+        resp = await client.post("/api/jobs/no-such-uuid/kill", headers=_admin_h(admin_user))
+        assert resp.status_code == 404
+
+    async def test_kill_job_machine_not_found(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        script: Script,
+    ) -> None:
+        """Kill a persistent job whose machine was deleted → 404."""
+        job = Job(
+            job_uuid="kill-orphan",
+            machine_id=99999,
             script_id=script.id,
-            user_id=user.id,
+            user_id=admin_user.id,
             params_json="{}",
             status=JobStatus.running,
             persistent=True,
@@ -442,71 +630,8 @@ class TestKillJob:
         )
         db_session.add(job)
         await db_session.commit()
-        await db_session.refresh(job)
-        return job
-
-    def test_kill_persistent_job(
-        self,
-        client: TestClient,
-        db_session: AsyncSession,
-        admin_user: User,
-        machine: Machine,
-        script: Script,
-    ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._make_persistent_job(db_session, machine, script, admin_user)
-        )
-        ctx = _agent_client_ctx(
-            descriptor=ScriptDescriptor(name="hello", state=ApprovalState.approved)
-        )
-        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
-            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                resp = client.post("/api/jobs/persist-uuid/kill", headers=_admin_h(admin_user))
-
-        assert resp.status_code == 204
-
-    def test_kill_nonpersistent_returns_400(
-        self,
-        client: TestClient,
-        db_session: AsyncSession,
-        admin_user: User,
-        machine: Machine,
-        script: Script,
-    ) -> None:
-        import asyncio
-
-        job = asyncio.get_event_loop().run_until_complete(
-            _make_oneoff_job(db_session, machine, script, admin_user)
-        )
-        resp = client.post(f"/api/jobs/{job.job_uuid}/kill", headers=_admin_h(admin_user))
-        assert resp.status_code == 400
-
-    def test_kill_unknown_job_returns_404(self, client: TestClient, admin_user: User) -> None:
-        resp = client.post("/api/jobs/no-such-uuid/kill", headers=_admin_h(admin_user))
+        resp = await client.post("/api/jobs/kill-orphan/kill", headers=_admin_h(admin_user))
         assert resp.status_code == 404
-
-
-async def _make_oneoff_job(
-    session: AsyncSession, machine: Machine, script: Script, user: User
-) -> Job:
-    job = Job(
-        job_uuid="oneoff-uuid",
-        machine_id=machine.id,
-        script_id=script.id,
-        user_id=user.id,
-        params_json="{}",
-        status=JobStatus.completed,
-        persistent=False,
-        started_at=_now(),
-        ended_at=_now(),
-        exit_code=0,
-    )
-    session.add(job)
-    await session.commit()
-    await session.refresh(job)
-    return job
 
 
 # ---------------------------------------------------------------------------
@@ -538,101 +663,83 @@ class TestListJobs:
         await db_session.commit()
         return jobs
 
-    def test_list_all_jobs(
+    async def test_list_all_jobs(
         self,
-        client: TestClient,
+        client: httpx.AsyncClient,
         db_session: AsyncSession,
         admin_user: User,
         machine: Machine,
         script: Script,
     ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._seed_jobs(db_session, machine, script, admin_user)
-        )
-        resp = client.get("/api/jobs", headers=_admin_h(admin_user))
+        await self._seed_jobs(db_session, machine, script, admin_user)
+        resp = await client.get("/api/jobs", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert len(resp.json()) == 4
 
-    def test_filter_by_machine_id(
+    async def test_filter_by_machine_id(
         self,
-        client: TestClient,
+        client: httpx.AsyncClient,
         db_session: AsyncSession,
         admin_user: User,
         machine: Machine,
         script: Script,
     ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._seed_jobs(db_session, machine, script, admin_user)
-        )
-        resp = client.get(f"/api/jobs?machine_id={machine.id}", headers=_admin_h(admin_user))
+        await self._seed_jobs(db_session, machine, script, admin_user)
+        resp = await client.get(f"/api/jobs?machine_id={machine.id}", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert all(j["machine_id"] == machine.id for j in resp.json())
 
-    def test_filter_by_status(
+    async def test_filter_by_status(
         self,
-        client: TestClient,
+        client: httpx.AsyncClient,
         db_session: AsyncSession,
         admin_user: User,
         machine: Machine,
         script: Script,
     ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._seed_jobs(db_session, machine, script, admin_user)
-        )
-        resp = client.get("/api/jobs?status=completed", headers=_admin_h(admin_user))
+        await self._seed_jobs(db_session, machine, script, admin_user)
+        resp = await client.get("/api/jobs?status=completed", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert all(j["status"] == "completed" for j in resp.json())
         assert len(resp.json()) == 2
 
-    def test_filter_by_script_name(
+    async def test_filter_by_script_name(
         self,
-        client: TestClient,
+        client: httpx.AsyncClient,
         db_session: AsyncSession,
         admin_user: User,
         machine: Machine,
         script: Script,
     ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._seed_jobs(db_session, machine, script, admin_user)
-        )
-        resp = client.get("/api/jobs?script_name=hello", headers=_admin_h(admin_user))
+        await self._seed_jobs(db_session, machine, script, admin_user)
+        resp = await client.get("/api/jobs?script_name=hello", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert len(resp.json()) == 4
 
-    def test_filter_by_unknown_script_returns_empty(
-        self, client: TestClient, admin_user: User
+    async def test_filter_by_unknown_script_returns_empty(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
     ) -> None:
-        resp = client.get("/api/jobs?script_name=no-such", headers=_admin_h(admin_user))
+        resp = await client.get("/api/jobs?script_name=no-such", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_limit_parameter(
+    async def test_limit_parameter(
         self,
-        client: TestClient,
+        client: httpx.AsyncClient,
         db_session: AsyncSession,
         admin_user: User,
         machine: Machine,
         script: Script,
     ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._seed_jobs(db_session, machine, script, admin_user)
-        )
-        resp = client.get("/api/jobs?limit=2", headers=_admin_h(admin_user))
+        await self._seed_jobs(db_session, machine, script, admin_user)
+        resp = await client.get("/api/jobs?limit=2", headers=_admin_h(admin_user))
         assert resp.status_code == 200
         assert len(resp.json()) == 2
 
-    def test_unauthenticated_returns_401(self, client: TestClient) -> None:
-        resp = client.get("/api/jobs")
+    async def test_unauthenticated_returns_401(self, client: httpx.AsyncClient) -> None:
+        resp = await client.get("/api/jobs")
         assert resp.status_code == 401
 
 
@@ -642,14 +749,92 @@ class TestListJobs:
 
 
 class TestStreamLogs:
-    async def _make_running_job(
-        self, db_session: AsyncSession, machine: Machine, script: Script, user: User
-    ) -> Job:
-        job = Job(
+    async def test_stream_returns_sse_content(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        await _make_job(
+            db_session,
+            machine,
+            script,
+            admin_user,
             job_uuid="stream-uuid",
-            machine_id=machine.id,
+            status=JobStatus.running,
+            persistent=True,
+        )
+        ctx = _agent_client_ctx(
+            descriptor=ScriptDescriptor(name="hello", state=ApprovalState.approved)
+        )
+        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                async with client.stream(
+                    "GET",
+                    "/api/jobs/stream-uuid/stream",
+                    headers=_admin_h(admin_user),
+                ) as resp:
+                    assert resp.status_code == 200
+                    assert "text/event-stream" in resp.headers["content-type"]
+                    body = await resp.aread()
+        assert b"line one" in body
+        assert b"line two" in body
+
+    async def test_stream_error_yields_error_event(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        """When AgentClient raises, the SSE stream emits an error event."""
+        await _make_job(
+            db_session,
+            machine,
+            script,
+            admin_user,
+            job_uuid="stream-err",
+            status=JobStatus.running,
+            persistent=True,
+        )
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(side_effect=Exception("boom"))
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                async with client.stream(
+                    "GET",
+                    "/api/jobs/stream-err/stream",
+                    headers=_admin_h(admin_user),
+                ) as resp:
+                    assert resp.status_code == 200
+                    body = await resp.aread()
+        assert b"event: error" in body
+
+    async def test_stream_not_found_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+    ) -> None:
+        resp = await client.get("/api/jobs/no-such-uuid/stream", headers=_admin_h(admin_user))
+        assert resp.status_code == 404
+
+    async def test_stream_machine_not_found_returns_404(
+        self,
+        client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        admin_user: User,
+        script: Script,
+    ) -> None:
+        """Stream endpoint returns 404 when the machine no longer exists."""
+        job = Job(
+            job_uuid="no-machine-stream",
+            machine_id=99999,
             script_id=script.id,
-            user_id=user.id,
+            user_id=admin_user.id,
             params_json="{}",
             status=JobStatus.running,
             persistent=True,
@@ -659,37 +844,7 @@ class TestStreamLogs:
         )
         db_session.add(job)
         await db_session.commit()
-        await db_session.refresh(job)
-        return job
-
-    def test_stream_returns_sse_media_type(
-        self,
-        client: TestClient,
-        db_session: AsyncSession,
-        admin_user: User,
-        machine: Machine,
-        script: Script,
-    ) -> None:
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(
-            self._make_running_job(db_session, machine, script, admin_user)
-        )
-        ctx = _agent_client_ctx(
-            descriptor=ScriptDescriptor(name="hello", state=ApprovalState.approved)
-        )
-        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
-            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
-                with client.stream(
-                    "GET",
-                    "/api/jobs/stream-uuid/stream",
-                    headers=_admin_h(admin_user),
-                ) as resp:
-                    assert resp.status_code == 200
-                    assert "text/event-stream" in resp.headers["content-type"]
-
-    def test_stream_not_found_returns_404(self, client: TestClient, admin_user: User) -> None:
-        resp = client.get("/api/jobs/no-such-uuid/stream", headers=_admin_h(admin_user))
+        resp = await client.get("/api/jobs/no-machine-stream/stream", headers=_admin_h(admin_user))
         assert resp.status_code == 404
 
 
@@ -703,20 +858,12 @@ async def _make_reconciler_db(
     master_key: bytes,
     jobs: list[Job],
     machine_row: Machine,
-) -> tuple[async_sessionmaker[AsyncSession], AsyncSession]:
-    """Create an independent in-memory DB for reconciler tests.
-
-    Returns (factory, session).  The machine row is inserted so the reconciler
-    can look up the machine for the jobs.  The caller must close the engine.
-    """
-    from sqlalchemy.ext.asyncio import create_async_engine
-
+) -> tuple[async_sessionmaker[AsyncSession], object]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    # Re-create the machine in the new DB (with a fresh key encrypted by master_key)
     async with factory() as s:
         new_machine = Machine(
             name=machine_row.name,
@@ -830,3 +977,162 @@ class TestReconciler:
             MockClient.assert_not_called()
 
         await engine.dispose()
+
+    async def test_reconcile_agent_client_error_continues(
+        self,
+        machine: Machine,
+        script: Script,
+        admin_user: User,
+    ) -> None:
+        """AgentClientError for a job is logged as debug and that job is skipped."""
+        from control_station_lite.server.config import get_settings
+
+        master_key = get_settings().read_master_key()
+
+        job_template = Job(
+            job_uuid="agent-err-uuid",
+            machine_id=machine.id,
+            script_id=script.id,
+            user_id=admin_user.id,
+            params_json="{}",
+            status=JobStatus.running,
+            persistent=True,
+            started_at=_now(),
+            ended_at=None,
+            exit_code=None,
+        )
+        factory, engine = await _make_reconciler_db(
+            master_key=master_key, jobs=[job_template], machine_row=machine
+        )
+
+        mock_client = MagicMock()
+        mock_client.get_job_status = AsyncMock(side_effect=AgentClientError("refused"))
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("control_station_lite.server.core.job_reconciler.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.core.job_reconciler.get_ssh_pool"):
+                await reconcile_once(factory, master_key)
+
+        async with factory() as s:
+            res = await s.execute(select(Job).where(Job.job_uuid == "agent-err-uuid"))
+            job_row = res.scalar_one()
+            assert job_row.status == JobStatus.running  # unchanged
+
+        await engine.dispose()
+
+    async def test_reconcile_unknown_error_marks_failed(
+        self,
+        machine: Machine,
+        script: Script,
+        admin_user: User,
+    ) -> None:
+        """A generic exception (job not found on agent) marks the job failed."""
+        from control_station_lite.server.config import get_settings
+
+        master_key = get_settings().read_master_key()
+
+        job_template = Job(
+            job_uuid="unknown-err-uuid",
+            machine_id=machine.id,
+            script_id=script.id,
+            user_id=admin_user.id,
+            params_json="{}",
+            status=JobStatus.running,
+            persistent=True,
+            started_at=_now(),
+            ended_at=None,
+            exit_code=None,
+        )
+        factory, engine = await _make_reconciler_db(
+            master_key=master_key, jobs=[job_template], machine_row=machine
+        )
+
+        mock_client = MagicMock()
+        mock_client.get_job_status = AsyncMock(side_effect=ValueError("unexpected"))
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("control_station_lite.server.core.job_reconciler.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.core.job_reconciler.get_ssh_pool"):
+                await reconcile_once(factory, master_key)
+
+        async with factory() as s:
+            res = await s.execute(select(Job).where(Job.job_uuid == "unknown-err-uuid"))
+            job_row = res.scalar_one()
+            assert job_row.status == JobStatus.failed
+
+        await engine.dispose()
+
+    async def test_reconcile_machine_level_error_is_logged(
+        self,
+        machine: Machine,
+        script: Script,
+        admin_user: User,
+    ) -> None:
+        """When the entire AgentClient connection fails, the machine is skipped."""
+        from control_station_lite.server.config import get_settings
+
+        master_key = get_settings().read_master_key()
+
+        job_template = Job(
+            job_uuid="machine-err-uuid",
+            machine_id=machine.id,
+            script_id=script.id,
+            user_id=admin_user.id,
+            params_json="{}",
+            status=JobStatus.running,
+            persistent=True,
+            started_at=_now(),
+            ended_at=None,
+            exit_code=None,
+        )
+        factory, engine = await _make_reconciler_db(
+            master_key=master_key, jobs=[job_template], machine_row=machine
+        )
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(side_effect=OSError("connection refused"))
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("control_station_lite.server.core.job_reconciler.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.core.job_reconciler.get_ssh_pool"):
+                await reconcile_once(factory, master_key)
+
+        async with factory() as s:
+            res = await s.execute(select(Job).where(Job.job_uuid == "machine-err-uuid"))
+            job_row = res.scalar_one()
+            assert job_row.status == JobStatus.running  # unchanged — machine skipped
+
+        await engine.dispose()
+
+    async def test_reconciler_loop_handles_exception_and_continues(
+        self,
+        machine: Machine,
+        script: Script,
+        admin_user: User,
+    ) -> None:
+        """reconciler_loop catches unexpected errors and keeps running."""
+        call_count = 0
+
+        async def fake_sleep(_: float) -> None:
+            pass
+
+        async def fake_reconcile(factory: object, master_key: bytes) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("simulated transient error")
+            raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", fake_sleep):
+            with patch(
+                "control_station_lite.server.core.job_reconciler.reconcile_once",
+                fake_reconcile,
+            ):
+                with pytest.raises(asyncio.CancelledError):
+                    await reconciler_loop(None, b"key")  # type: ignore[arg-type]
+
+        assert call_count == 2
