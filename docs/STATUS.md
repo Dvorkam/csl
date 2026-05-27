@@ -7,16 +7,18 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 4.1** — `shared/registration.py`: encode/decode registration bundle.
+**Phase 7.1–7.3** — Built-in actions (Wake-on-LAN).
 
 ## Up next
 
-**Phase 4.2** — `server/api/machines.py`: machine registration, listing, detail.
+**Phase 8** — Frontend (Jinja2 + HTMX).
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 6.1–6.6 | Phase 6 complete. `server/api/jobs.py`: submit, status, SSE log proxy, kill, history. `server/core/job_reconciler.py`: background task polls agents for running jobs. End-to-end tests for approval flow, persistent job streaming, rejected script surface. | PR #16 |
+| 7.1–7.3 | Phase 7 complete. `server/core/magic_packet.py`: `build_packet` (102-byte WoL packet, accepts `:` / `-` / unseparated MAC) + `broadcast` (UDP, configurable addr/port). `server/api/builtin.py`: `POST /api/machines/{id}/builtin/wol` — auth + bookmark-gated, 400 on missing MAC, audit-log entry on success and failure, 502 on socket error. 17 unit + integration tests. | branch `feature/phase-7-builtin-wol` |
 | 3.1–3.7 | Phase 3 complete. `password.py`: bcrypt 5.x direct (dropped passlib — incompatible). `jwt.py`: HS256 access (30 min) + refresh (14 day) tokens, JTI-based. `dependencies.py`: `current_user` + `require_admin` FastAPI deps. `api/auth.py`: login/refresh/logout with `HttpOnly Secure SameSite=Strict` refresh cookie; rotation revokes old JTI on refresh; logout revokes on exit. `server/cli.py` + `csl-admin` entry point for `create-admin`. 24 integration tests (real bcrypt, real JWT, real in-memory SQLite) — `base_url="https://testserver"` required for Secure cookie propagation. | branch `feature/phase-3-auth` |
 | 2.7 | `server/core/agent_client.py`: `AgentClient` async context manager; `__aenter__` opens SSH tunnel via `SSHConnectionPool`, creates `httpx.AsyncClient`; `ensure_agent_running` pings `/healthz`, on failure issues platform start command (`systemctl`/`schtasks`/`launchctl`) via SSH exec, polls with `(0.5,1,1.5,2)` s backoff; 6 typed methods (`get_health`, `get_script_state`, `stage_script`, `submit_job`, `kill_job`, `stream_logs`); `stream_logs` is an async generator that yields SSE `data:` payloads; `httpx` added to server runtime deps; `_http_client` injectable for tests; `httpx.MockTransport` used in 16 unit tests | branch `feature/task-2.6-ssh-pool` |
 | 2.6 | `server/core/ssh.py`: `SSHConnectionPool` keyed by `(host, port, username)`; `get_connection` opens or reuses, replaces stale closed connections; `open_tunnel` forwards a random local port via asyncssh `forward_local_port`, tracks listeners for clean shutdown; `close` / `close_all` for teardown; `get_ssh_pool()` lru_cached singleton; `known_hosts=None` with doc note (fingerprint check delegated to `agent_client.py`); 15 unit tests (all mocked); manual test in `tests/manual/linux/` for real sshd | branch `feature/task-2.6-ssh-pool` |
