@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Control Station{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <a class="navbar-brand" href="/">&#9881; Control Station</a>
+    <div class="navbar-links">
+      {% if user is defined and user %}
+        <span class="navbar-user">{{ user.username }}{% if user.role == "admin" %} <span class="badge badge-admin">admin</span>{% endif %}</span>
+        {% if user.role == "admin" %}
+          <a href="/admin/scripts">Scripts</a>
+          <a href="/admin/machines">Machines</a>
+          <a href="/admin/users">Users</a>
+          <a href="/admin/audit">Audit</a>
+        {% endif %}
+        <form method="post" action="/logout" class="inline-form">
+          <button type="submit" class="btn btn-sm btn-ghost">Log out</button>
+        </form>
+      {% else %}
+        <a href="/login">Log in</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  {% if flash %}
+  <div class="flash flash-{{ flash[0] }}" role="alert">
+    {{ flash[1] }}
+  </div>
+  {% endif %}
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/static/js/htmx.min.js"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

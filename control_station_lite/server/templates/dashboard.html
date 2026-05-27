@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+</div>
+
+{% if not machines %}
+<div class="empty-state">
+  <p>No machines available.</p>
+  {% if user.role == "admin" %}
+  <p><a href="/admin/machines">Register a machine</a> to get started.</p>
+  {% else %}
+  <p>Contact an administrator to get access to machines.</p>
+  {% endif %}
+</div>
+{% else %}
+<div class="machine-grid">
+  {% for m in machines %}
+  <div class="machine-card">
+    <div class="machine-card-header">
+      <a class="machine-name" href="/machines/{{ m.id }}">{{ m.name }}</a>
+      <span
+        id="ping-{{ m.id }}"
+        class="ping-badge ping-unknown"
+        hx-get="/machines/{{ m.id }}/ping-badge"
+        hx-trigger="load, every 30s"
+        hx-swap="outerHTML"
+        hx-target="#ping-{{ m.id }}"
+        aria-label="Checking reachability…"
+      >&#8942;</span>
+    </div>
+    <div class="machine-meta">
+      <span class="meta-item">{{ m.ssh_user }}@{{ m.ssh_host }}:{{ m.ssh_port }}</span>
+      <span class="meta-item">{{ m.platform }}</span>
+      {% if m.mac_address %}
+      <span class="meta-item">MAC {{ m.mac_address }}</span>
+      {% endif %}
+    </div>
+    <div class="machine-actions">
+      <a class="btn btn-sm btn-secondary" href="/machines/{{ m.id }}">Details</a>
+      {% if m.mac_address %}
+      <button class="btn btn-sm btn-secondary"
+              hx-post="/api/machines/{{ m.id }}/builtin/wol"
+              hx-headers='{"Authorization": ""}'
+              onclick="wol({{ m.id }}, this)">Wake</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function wol(machineId, btn) {
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  try {
+    const res = await fetch("/api/machines/" + machineId + "/builtin/wol", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSL-Web": "1"},
+    });
+    btn.textContent = res.ok ? "Sent ✓" : "Failed ✗";
+  } catch {
+    btn.textContent = "Error ✗";
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = "Wake"; }, 3000);
+}
+</script>
+{% endblock %}

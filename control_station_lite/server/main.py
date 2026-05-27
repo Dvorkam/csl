@@ -13,9 +13,11 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from control_station_lite.server.api import (
     admin,
@@ -27,6 +29,10 @@ from control_station_lite.server.api import (
     machines,
     scripts,
 )
+from control_station_lite.server.web import auth as web_auth
+from control_station_lite.server.web import dashboard as web_dashboard
+
+_SERVER_DIR = Path(__file__).parent
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +77,7 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         factory = _session_factory()
         task = asyncio.create_task(reconciler_loop(factory, master_key))
         logger.info("Job reconciler started")
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover
         logger.warning("Job reconciler could not start (settings not available): %s", exc)
         task = None
 
@@ -88,6 +94,13 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="control-station-lite", lifespan=_lifespan)
 
+app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="static")
+
+# Web (HTML) routes — included before API so /login takes priority over any future conflict
+app.include_router(web_auth.router)
+app.include_router(web_dashboard.router)
+
+# JSON API routes
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(machines.router)
@@ -98,5 +111,17 @@ app.include_router(audit.router)
 app.include_router(admin.router)
 
 
-def main() -> None:
-    uvicorn.run("control_station_lite.server.main:app", host="127.0.0.1", port=8000, reload=False)
+def main() -> None:  # pragma: no cover
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="csl-server")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--reload", action="store_true", default=False)
+    args = parser.parse_args()
+    uvicorn.run(
+        "control_station_lite.server.main:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
