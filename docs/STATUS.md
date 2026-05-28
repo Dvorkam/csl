@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 8.8–8.12** — Admin pages: script library, script editor, machine management, user management, audit log viewer.
+**Phase 9 / Phase 10** — Audit log API + packaging (see TASKS.md).
 
 ## Up next
 
-**Phase 8.13+** — TBD (see TASKS.md).
+**Phase 9.1–9.3** — `server/api/audit.py` with admin-only read access, audit decorator, coverage verification.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 8.8–8.12 | Admin pages. `server/web/admin.py`: script library list, script editor (create/edit/delete), machine management list + delete, user list + enable/disable + role change, audit log viewer with action/target_type/username filters and pagination. 5 Jinja2 templates under `templates/admin/`. CSS extended with admin-table, code-editor, filter-bar, pagination, audit-details. 33 unit tests covering auth gates, CRUD flows, guard rails (cannot disable/demote self). | branch `feature/phase-8-admin-pages` |
 | 8.4–8.7 (bug fixes) | Manual testing revealed and fixed five bugs: (1) `ApprovalsManager` cached state in memory — CLI approvals not visible to running HTTP agent; fixed with mtime-based disk reload on `get_state`/`list_all`. (2) `AgentClient.stage_script`/`submit_job` used `content=` instead of `json=` — FastAPI returned 422; fixed. (3) `event: error` SSE event type fired browser `onerror` before `event: end` — fixed. (4) Non-persistent job output was discarded; `submit_job` now writes stdout+stderr to `logs_dir/{uuid}.log`; `stream_job_logs` falls back to that file. (5) Agent had no `DELETE /jobs/{uuid}` endpoint; added `kill_job`. Also added `csl-agent approvals purge` to remove orphaned entries left by schemathesis fuzzing; teardown script updated to run purge automatically. Approval badge ↻ refresh button added. | main |
 | 8.4–8.7 | Machine detail page, script run dialog, live log viewer, approval-state badges. `server/web/machines.py`: machine detail (scripts + states from DB cache, running jobs), script run form (dynamic fields from meta_yaml), job submit (SSH+agent, approval error surfacing), re-stage HTMX partial, on-demand state-badge refresh endpoint, job detail page with SSE log viewer, EventSource-based auto-scrolling log, kill button. Templates: `machine_detail.html`, `run_dialog.html`, `job_detail.html`, `partials/script_state_badge.html`. CSS extended with approval-badge variants, log viewer, detail grid. 22 unit tests. | branch `feature/phase-8-frontend-foundation` |
 | 7.1–7.3 | Phase 7 complete. `server/core/magic_packet.py` + `server/api/builtin.py`: WoL magic packet + `POST /api/machines/{id}/builtin/wol`. Audit-log integration. 17 tests. | PR #17 |

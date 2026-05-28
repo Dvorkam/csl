@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — Admin — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header-row">
+  <h1>Audit Log</h1>
+</div>
+
+<form method="get" action="/admin/audit" class="filter-bar">
+  <select name="action">
+    <option value="">All actions</option>
+    {% for a in actions %}
+    <option value="{{ a }}" {% if filter_action == a %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="target_type">
+    <option value="">All targets</option>
+    {% for t in target_types %}
+    <option value="{{ t }}" {% if filter_target_type == t %}selected{% endif %}>{{ t }}</option>
+    {% endfor %}
+  </select>
+
+  <input type="text" name="username" placeholder="Username…"
+         value="{{ filter_username }}" />
+
+  <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
+  {% if filter_action or filter_target_type or filter_username %}
+  <a href="/admin/audit" class="btn btn-sm btn-ghost">Clear</a>
+  {% endif %}
+</form>
+
+{% if not rows %}
+<div class="empty-state"><p>No audit log entries match the current filters.</p></div>
+{% else %}
+<table class="admin-table audit-table">
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>User</th>
+      <th>Action</th>
+      <th>Target</th>
+      <th>Result</th>
+      <th>Details</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry, uname in rows %}
+    <tr>
+      <td class="admin-sub nowrap">{{ entry.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ uname or "—" }}</td>
+      <td><code>{{ entry.action }}</code></td>
+      <td class="admin-sub">{{ entry.target_type }}/{{ entry.target_id }}</td>
+      <td>
+        {% if entry.result == "ok" or entry.result == "success" %}
+        <span class="badge badge-completed">{{ entry.result }}</span>
+        {% elif entry.result == "error" or entry.result == "failure" %}
+        <span class="badge badge-failed">{{ entry.result }}</span>
+        {% else %}
+        <span class="admin-sub">{{ entry.result }}</span>
+        {% endif %}
+      </td>
+      <td class="admin-sub audit-details">{{ entry.details_json or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}
+  <a class="btn btn-sm btn-ghost"
+     href="/admin/audit?page={{ page - 1 }}&action={{ filter_action }}&target_type={{ filter_target_type }}&username={{ filter_username }}">
+    ← Prev
+  </a>
+  {% endif %}
+  <span class="admin-sub">Page {{ page }}</span>
+  {% if has_next %}
+  <a class="btn btn-sm btn-ghost"
+     href="/admin/audit?page={{ page + 1 }}&action={{ filter_action }}&target_type={{ filter_target_type }}&username={{ filter_username }}">
+    Next →
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

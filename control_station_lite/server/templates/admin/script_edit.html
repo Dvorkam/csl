@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{% if script %}Edit {{ script.name }}{% else %}New Script{% endif %} — Admin — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header-row">
+  <h1>{% if script %}Edit <code>{{ script.name }}</code>{% else %}New Script{% endif %}</h1>
+  <a class="btn btn-sm btn-ghost" href="/admin/scripts">← Back</a>
+</div>
+
+{% if error %}
+<div class="flash flash-error" role="alert">{{ error }}</div>
+{% endif %}
+
+<form method="post"
+      action="{% if script %}/admin/scripts/{{ script.name }}/edit{% else %}/admin/scripts/new{% endif %}"
+      class="editor-form">
+
+  {% if not script %}
+  <div class="form-group">
+    <label for="name">Name <span class="required">*</span></label>
+    <input id="name" name="name" type="text" required
+           value="{{ name if name is defined else '' }}"
+           placeholder="e.g. restart_nginx" />
+    <span class="help-text">Alphanumeric, underscores, hyphens and dots only.</span>
+  </div>
+  {% endif %}
+
+  <div class="form-group">
+    <label for="content">Script content <span class="required">*</span></label>
+    <textarea id="content" name="content" class="code-editor" required
+              rows="20" spellcheck="false">{% if script %}{{ script.content }}{% elif content is defined %}{{ content }}{% endif %}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label for="meta_yaml">meta.yaml <span class="help-text">(optional)</span></label>
+    <textarea id="meta_yaml" name="meta_yaml" class="code-editor"
+              rows="10" spellcheck="false">{% if script %}{{ script.meta_yaml or '' }}{% elif meta_yaml is defined %}{{ meta_yaml }}{% endif %}</textarea>
+    <span class="help-text">Describes parameters; controls whether the script is persistent.</span>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">
+      {% if script %}Save changes{% else %}Create script{% endif %}
+    </button>
+    <a class="btn btn-ghost" href="/admin/scripts">Cancel</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+/* Tab key inserts spaces in textareas so scripts are editable without leaving the form. */
+document.querySelectorAll(".code-editor").forEach(function(ta) {
+  ta.addEventListener("keydown", function(e) {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      var s = ta.selectionStart;
+      ta.value = ta.value.slice(0, s) + "    " + ta.value.slice(ta.selectionEnd);
+      ta.selectionStart = ta.selectionEnd = s + 4;
+    }
+  });
+});
+</script>
+{% endblock %}

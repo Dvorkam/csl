@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Users — Admin — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header-row">
+  <h1>User Management</h1>
+</div>
+<p class="admin-hint">Create users via <code>csl-admin create-admin</code> on the server.</p>
+
+<table class="admin-table">
+  <thead>
+    <tr>
+      <th>Username</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr class="{% if u.disabled %}row-disabled{% endif %}">
+      <td><strong>{{ u.username }}</strong>
+        {% if u.id == user.id %}<span class="admin-sub">(you)</span>{% endif %}
+      </td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}/role" class="inline-form">
+          <select name="role" onchange="this.form.submit()"
+                  {% if u.id == user.id %}disabled title="Cannot change your own role"{% endif %}>
+            <option value="admin" {% if u.role == "admin" %}selected{% endif %}>admin</option>
+            <option value="user"  {% if u.role == "user"  %}selected{% endif %}>user</option>
+          </select>
+        </form>
+      </td>
+      <td>
+        {% if u.disabled %}
+        <span class="badge badge-failed">disabled</span>
+        {% else %}
+        <span class="badge badge-completed">active</span>
+        {% endif %}
+      </td>
+      <td class="admin-sub">{{ u.created_at.strftime("%Y-%m-%d") }}</td>
+      <td class="admin-actions">
+        {% if u.id != user.id %}
+        <form method="post" action="/admin/users/{{ u.id }}/toggle">
+          <button class="btn btn-sm {% if u.disabled %}btn-secondary{% else %}btn-ghost{% endif %}">
+            {{ "Enable" if u.disabled else "Disable" }}
+          </button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

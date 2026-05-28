@@ -29,6 +29,7 @@ from control_station_lite.server.api import (
     machines,
     scripts,
 )
+from control_station_lite.server.web import admin as web_admin
 from control_station_lite.server.web import auth as web_auth
 from control_station_lite.server.web import dashboard as web_dashboard
 from control_station_lite.server.web import machines as web_machines
@@ -101,6 +102,7 @@ app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="s
 app.include_router(web_auth.router)
 app.include_router(web_dashboard.router)
 app.include_router(web_machines.router)
+app.include_router(web_admin.router)
 
 # JSON API routes
 app.include_router(health.router)
