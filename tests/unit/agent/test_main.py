@@ -97,6 +97,7 @@ class TestSubmitJobEndpoint:
         )
         assert resp.status_code == 403
 
+    @pytest.mark.linux_only
     def test_non_persistent_job_writes_log_file(
         self, isolated_client: TestClient, tmp_path: Path
     ) -> None:
@@ -118,6 +119,7 @@ class TestSubmitJobEndpoint:
         assert log_file.exists(), "log file must be written for non-persistent jobs"
         assert "hello-from-script" in log_file.read_text()
 
+    @pytest.mark.linux_only
     def test_non_persistent_log_streamable(
         self, isolated_client: TestClient, tmp_path: Path
     ) -> None:
