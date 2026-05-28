@@ -1,5 +1,8 @@
 <span class="approval-badge approval-{{ state }}"
       title="approved MD5: {{ approved_md5 or '—' }}&#10;pending MD5: {{ pending_md5 or '—' }}">{{ state }}</span>
+{% if agent_unreachable is defined and agent_unreachable %}
+<span class="approval-action-note" title="Could not reach agent; showing cached state">&#9888; cached</span>
+{% endif %}
 <button class="btn btn-sm btn-ghost btn-refresh"
         hx-get="/machines/{{ machine_id }}/scripts/{{ script_name }}/state-badge"
         hx-target="#state-{{ script_id }}"
@@ -8,7 +11,7 @@
 {% if state == 'approved' or state == 'approved_stale' %}
 <a class="btn btn-sm btn-primary{% if state == 'approved_stale' %} btn-warn{% endif %}"
    href="/machines/{{ machine_id }}/scripts/{{ script_name }}/run"
-   title="{% if state == 'approved_stale' %}Script content has changed — approved version may be stale{% endif %}">Run</a>
+   title="{% if state == 'approved_stale' %}Script content has changed — re-stage and get re-approved to run latest version{% endif %}">Run</a>
 {% elif state == 'absent' %}
 <button class="btn btn-sm btn-secondary"
         hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
@@ -19,8 +22,7 @@
 <button class="btn btn-sm btn-secondary"
         hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
         hx-target="#state-{{ script_id }}"
-        hx-swap="innerHTML"
-        title="Re-send to agent for approval">Re-stage</button>
+        hx-swap="innerHTML">Re-stage</button>
 <span class="approval-action-note">Awaiting approval on target</span>
 {% elif state == 'rejected' %}
 <span class="approval-action-note">Run <code>csl-agent approvals clear {{ script_name }}</code> on target to reset</span>

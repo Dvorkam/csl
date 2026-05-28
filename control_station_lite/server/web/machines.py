@@ -356,11 +356,7 @@ async def script_state_badge(
     )
     cached_row = cached_res.scalar_one_or_none()
 
-    try:
-        async with AgentClient(machine, private_key, pool) as client:
-            descriptor = await client.get_script_state(script.name)
-            new_state = str(descriptor.state)
-    except AgentClientError:
+    def _cached_badge_response() -> Response:
         return templates.TemplateResponse(
             request,
             "partials/script_state_badge.html",
@@ -371,8 +367,24 @@ async def script_state_badge(
                 "state": cached_row.state if cached_row else "absent",
                 "approved_md5": cached_row.approved_md5 if cached_row else None,
                 "pending_md5": cached_row.pending_md5 if cached_row else None,
+                "agent_unreachable": True,
             },
         )
+
+    try:
+        async with AgentClient(machine, private_key, pool) as client:
+            descriptor = await client.get_script_state(script.name)
+    except Exception:
+        # Agent unreachable or SSH failed — return cached state rather than 500
+        return _cached_badge_response()
+
+    # Compute effective state: approved_stale when the canonical script has been
+    # edited since the agent last approved it.
+    agent_state = str(descriptor.state)
+    if agent_state == "approved" and descriptor.approved_md5 != script.md5:
+        new_state = "approved_stale"
+    else:
+        new_state = agent_state
 
     now = datetime.utcnow()
     if cached_row is None:
@@ -403,6 +415,7 @@ async def script_state_badge(
             "state": new_state,
             "approved_md5": descriptor.approved_md5,
             "pending_md5": descriptor.pending_md5,
+            "agent_unreachable": False,
         },
     )
 
