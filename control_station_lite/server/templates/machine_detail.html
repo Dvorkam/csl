@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}{{ machine.name }} — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-row">
+    <h1>{{ machine.name }}</h1>
+    <span
+      id="ping-{{ machine.id }}"
+      class="ping-badge ping-unknown"
+      hx-get="/machines/{{ machine.id }}/ping-badge"
+      hx-trigger="load"
+      hx-swap="outerHTML"
+      aria-label="Checking reachability…"
+    >&#8942;</span>
+  </div>
+  <div class="page-header-meta">
+    <span class="meta-item">{{ machine.ssh_user }}@{{ machine.ssh_host }}:{{ machine.ssh_port }}</span>
+    <span class="meta-item">{{ machine.platform }}</span>
+    {% if machine.mac_address %}
+    <span class="meta-item">MAC {{ machine.mac_address }}</span>
+    {% endif %}
+    {% if machine.mac_address %}
+    <button class="btn btn-sm btn-secondary"
+            onclick="wol({{ machine.id }}, this)">Wake</button>
+    {% endif %}
+  </div>
+  <div class="page-header-actions">
+    <a class="btn btn-sm btn-secondary" href="/">← Dashboard</a>
+  </div>
+</div>
+
+{% if running_jobs %}
+<section class="detail-section">
+  <h2>Running Jobs</h2>
+  <div class="job-list">
+    {% for job in running_jobs %}
+    <div class="job-row">
+      <a class="job-uuid" href="/jobs/{{ job.job_uuid }}">{{ job.job_uuid[:8] }}…</a>
+      <span class="badge badge-{{ job.status }}">{{ job.status }}</span>
+      <span class="muted">started {{ job.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="detail-section">
+  <h2>Scripts</h2>
+  {% if script_states %}
+  <table class="script-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Approval state</th>
+        <th>Approved MD5</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for ss in script_states %}
+    <tr>
+      <td>
+        <strong>{{ ss.script.name }}</strong>
+        {% if ss.description %}
+        <div class="muted script-desc">{{ ss.description }}</div>
+        {% endif %}
+        {% if ss.script.persistent %}
+        <span class="badge badge-persistent">persistent</span>
+        {% endif %}
+      </td>
+      <td>
+        <div id="state-{{ ss.script.id }}">
+          <span class="approval-badge approval-{{ ss.state }}"
+                title="approved MD5: {{ ss.approved_md5 or '—' }}&#10;pending MD5: {{ ss.pending_md5 or '—' }}">{{ ss.state }}</span>
+          <button class="btn btn-sm btn-ghost btn-refresh"
+                  hx-get="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/state-badge"
+                  hx-target="#state-{{ ss.script.id }}"
+                  hx-swap="innerHTML"
+                  title="Refresh state from agent">&#8635;</button>
+          {% if ss.state in ('pending', 'update_pending') %}
+          <button class="btn btn-sm btn-secondary"
+                  hx-post="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/restage"
+                  hx-target="#state-{{ ss.script.id }}"
+                  hx-swap="innerHTML"
+                  hx-indicator="#state-{{ ss.script.id }}">Re-stage</button>
+          {% endif %}
+        </div>
+      </td>
+      <td class="md5-cell">
+        <span class="md5" title="{{ ss.approved_md5 or '' }}">{{ (ss.approved_md5 or '—')[:8] }}</span>
+      </td>
+      <td>
+        <a class="btn btn-sm btn-primary" href="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/run">Run</a>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No scripts in the library yet.
+    {% if user.role == "admin" %}
+    <a href="/admin/scripts">Add a script</a>.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function wol(machineId, btn) {
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  try {
+    const res = await fetch("/api/machines/" + machineId + "/builtin/wol", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSL-Web": "1"},
+    });
+    btn.textContent = res.ok ? "Sent ✓" : "Failed ✗";
+  } catch {
+    btn.textContent = "Error ✗";
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = "Wake"; }, 3000);
+}
+</script>
+{% endblock %}

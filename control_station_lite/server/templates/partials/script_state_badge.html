@@ -1,0 +1,14 @@
+<span class="approval-badge approval-{{ state }}"
+      title="approved MD5: {{ approved_md5 or '—' }}&#10;pending MD5: {{ pending_md5 or '—' }}">{{ state }}</span>
+<button class="btn btn-sm btn-ghost btn-refresh"
+        hx-get="/machines/{{ machine_id }}/scripts/{{ script_name }}/state-badge"
+        hx-target="#state-{{ script_id }}"
+        hx-swap="innerHTML"
+        title="Refresh state from agent">&#8635;</button>
+{% if state in ('pending', 'update_pending') %}
+<button class="btn btn-sm btn-secondary"
+        hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
+        hx-target="#state-{{ script_id }}"
+        hx-swap="innerHTML"
+        hx-indicator="#state-{{ script_id }}">Re-stage</button>
+{% endif %}

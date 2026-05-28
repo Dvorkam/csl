@@ -72,6 +72,12 @@ def main() -> None:
     _name(ap_sub.add_parser("approve", help="Approve the pending version"))
     _name(ap_sub.add_parser("reject", help="Reject the pending version"))
     _name(ap_sub.add_parser("clear", help="Remove a script, resetting state to absent"))
+    purge_p = ap_sub.add_parser(
+        "purge", help="Remove orphaned entries whose backing files are missing"
+    )
+    purge_p.add_argument(
+        "--dry-run", action="store_true", help="Print what would be removed without removing it"
+    )
 
     # --- policy ---
     policy_p = subparsers.add_parser("policy", help="Manage the auto-approve policy")

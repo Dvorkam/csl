@@ -89,6 +89,7 @@ class ApprovalsManager:
         self._auto_approve = set(auto_approve_list or [])
         self._lock = threading.Lock()
         self._store = self._load()
+        self._mtime: float = self._current_mtime()
 
     # ------------------------------------------------------------------
     # Public read operations
@@ -100,6 +101,7 @@ class ApprovalsManager:
         Returns an absent descriptor for scripts that have not been staged yet.
         """
         with self._lock:
+            self._sync_from_disk()
             if name not in self._store.scripts:
                 return ScriptDescriptor(name=name, state=ApprovalState.absent)
             return self._descriptor(name)
@@ -107,6 +109,7 @@ class ApprovalsManager:
     def list_all(self) -> list[ScriptDescriptor]:
         """Return descriptors for all scripts known to this agent."""
         with self._lock:
+            self._sync_from_disk()
             return [self._descriptor(n) for n in self._store.scripts]
 
     # ------------------------------------------------------------------
@@ -297,6 +300,22 @@ class ApprovalsManager:
     # inconsistent with reality.  A future reconciliation pass on startup (analogous
     # to what state.py does for running.json) should detect and resolve such drift.
 
+    def _current_mtime(self) -> float:
+        try:
+            return self._paths.approvals_path.stat().st_mtime
+        except FileNotFoundError:
+            return 0.0
+
+    def _sync_from_disk(self) -> None:
+        """Reload store if approvals.json was modified by an external process (e.g. CLI).
+
+        Must be called while holding self._lock.
+        """
+        mtime = self._current_mtime()
+        if mtime != self._mtime:
+            self._store = self._load()
+            self._mtime = mtime
+
     def _load(self) -> _ApprovalsStore:
         if not self._paths.approvals_path.exists():
             return _ApprovalsStore()
@@ -316,6 +335,7 @@ class ApprovalsManager:
             encoding="utf-8",
         )
         tmp.replace(self._paths.approvals_path)
+        self._mtime = self._current_mtime()
 
     def _audit(self, action: str, name: str, **details: object) -> None:
         parts = " ".join(f"{k}={v}" for k, v in details.items())

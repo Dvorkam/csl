@@ -1,0 +1,6 @@
+description: Says hello with a custom greeting
+persistent: false
+params:
+  - name: greeting
+    type: string
+    required: true

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Run {{ script.name }} on {{ machine.name }} — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Run <em>{{ script.name }}</em></h1>
+  <div class="page-header-meta">
+    <span class="meta-item">on {{ machine.name }}</span>
+    {% if script.persistent %}
+    <span class="badge badge-persistent">persistent</span>
+    {% endif %}
+  </div>
+  <div class="page-header-actions">
+    <a class="btn btn-sm btn-secondary" href="/machines/{{ machine.id }}">← Machine</a>
+  </div>
+</div>
+
+{% if error %}
+<div class="flash flash-{% if 'pending' in error.approval_error %}warn{% elif error.approval_error == 'rejected' %}error{% else %}error{% endif %}">
+  {{ error.detail }}
+</div>
+{% endif %}
+
+<div class="run-card">
+  <form class="run-form" method="post"
+        action="/machines/{{ machine.id }}/scripts/{{ script.name }}/run">
+    {% if params %}
+    {% for p in params %}
+    <div class="form-group">
+      <label for="param-{{ p.name }}">
+        {{ p.name }}{% if p.required %}<span class="required"> *</span>{% endif %}
+      </label>
+      {% if p.help %}
+      <div class="help-text">{{ p.help }}</div>
+      {% endif %}
+
+      {% if p.type.value == 'bool' %}
+      <label class="checkbox-label">
+        <input type="checkbox" id="param-{{ p.name }}" name="{{ p.name }}" value="1"
+               {% if p.default %}checked{% endif %}>
+        {{ p.name }}
+      </label>
+
+      {% elif p.type.value == 'choice' %}
+      <select id="param-{{ p.name }}" name="{{ p.name }}"
+              {% if p.required %}required{% endif %}>
+        {% for c in p.choices %}
+        <option value="{{ c }}"{% if p.default is not none and p.default|string == c|string %} selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+
+      {% elif p.type.value in ('int', 'float') %}
+      <input type="number"
+             id="param-{{ p.name }}"
+             name="{{ p.name }}"
+             {% if p.type.value == 'int' %}step="1"{% else %}step="any"{% endif %}
+             {% if p.min is not none %}min="{{ p.min }}"{% endif %}
+             {% if p.max is not none %}max="{{ p.max }}"{% endif %}
+             value="{{ p.default if p.default is not none else '' }}"
+             {% if p.required %}required{% endif %}>
+
+      {% else %}
+      <input type="text"
+             id="param-{{ p.name }}"
+             name="{{ p.name }}"
+             value="{{ p.default if p.default is not none else '' }}"
+             {% if p.required %}required{% endif %}
+             {% if p.type.value == 'path' %}placeholder="/path/to/…"{% endif %}>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="muted no-params">This script has no parameters.</p>
+    {% endif %}
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Run</button>
+      <a href="/machines/{{ machine.id }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

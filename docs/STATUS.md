@@ -7,16 +7,18 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 8.1–8.3** — Frontend foundation (base layout, login page, dashboard with HTMX reachability polling).
+**Phase 8.8–8.12** — Admin pages: script library, script editor, machine management, user management, audit log viewer.
 
 ## Up next
 
-**Phase 8.4–8.7** — Machine detail page, script run dialog, live log viewer, approval-state badges.
+**Phase 8.13+** — TBD (see TASKS.md).
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 8.4–8.7 (bug fixes) | Manual testing revealed and fixed five bugs: (1) `ApprovalsManager` cached state in memory — CLI approvals not visible to running HTTP agent; fixed with mtime-based disk reload on `get_state`/`list_all`. (2) `AgentClient.stage_script`/`submit_job` used `content=` instead of `json=` — FastAPI returned 422; fixed. (3) `event: error` SSE event type fired browser `onerror` before `event: end` — fixed. (4) Non-persistent job output was discarded; `submit_job` now writes stdout+stderr to `logs_dir/{uuid}.log`; `stream_job_logs` falls back to that file. (5) Agent had no `DELETE /jobs/{uuid}` endpoint; added `kill_job`. Also added `csl-agent approvals purge` to remove orphaned entries left by schemathesis fuzzing; teardown script updated to run purge automatically. Approval badge ↻ refresh button added. | main |
+| 8.4–8.7 | Machine detail page, script run dialog, live log viewer, approval-state badges. `server/web/machines.py`: machine detail (scripts + states from DB cache, running jobs), script run form (dynamic fields from meta_yaml), job submit (SSH+agent, approval error surfacing), re-stage HTMX partial, on-demand state-badge refresh endpoint, job detail page with SSE log viewer, EventSource-based auto-scrolling log, kill button. Templates: `machine_detail.html`, `run_dialog.html`, `job_detail.html`, `partials/script_state_badge.html`. CSS extended with approval-badge variants, log viewer, detail grid. 22 unit tests. | branch `feature/phase-8-frontend-foundation` |
 | 7.1–7.3 | Phase 7 complete. `server/core/magic_packet.py` + `server/api/builtin.py`: WoL magic packet + `POST /api/machines/{id}/builtin/wol`. Audit-log integration. 17 tests. | PR #17 |
 | 8.1–8.3 | Frontend foundation. `server/web/`: `deps.py` (cookie-based auth dependency, flash helpers), `auth.py` (GET/POST /login, POST /logout), `dashboard.py` (GET /, HTMX ping-badge partial). Templates: `base.html`, `login.html`, `dashboard.html`, `partials/ping_badge.html`. `static/css/style.css` + bundled `htmx.min.js` (2.0.4). `python-multipart` added to server extras. | branch `feature/phase-8-frontend-foundation` |
 | 6.1–6.6 | Phase 6 complete. `server/api/jobs.py`: submit, status, SSE log proxy, kill, history. `server/core/job_reconciler.py`: background task polls agents for running jobs. End-to-end tests for approval flow, persistent job streaming, rejected script surface. | PR #16 |

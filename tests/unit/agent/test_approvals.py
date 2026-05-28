@@ -313,6 +313,23 @@ class TestPersistence:
         assert m2.get_state("s").state == ApprovalState.approved
         assert m2.get_state("s").approved_md5 == "md5"
 
+    def test_external_approval_visible_to_running_instance(self, paths: CslPaths) -> None:
+        """A running server instance must pick up approvals done by a separate CLI process.
+
+        Regression test for the bug where ApprovalsManager cached state in memory
+        and never re-read the file, so CLI approvals were invisible to the HTTP agent.
+        """
+        server_mgr = ApprovalsManager(paths)
+        server_mgr.stage("hello", "content", "abc123")
+        assert server_mgr.get_state("hello").state == ApprovalState.pending
+
+        # Simulate CLI running as a separate process
+        cli_mgr = ApprovalsManager(paths)
+        cli_mgr.approve("hello")
+
+        # The server manager must now see the updated state without restarting
+        assert server_mgr.get_state("hello").state == ApprovalState.approved
+
     def test_approvals_json_is_valid_json(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
         mgr.stage("s", "content", "md5")
         raw = json.loads(paths.approvals_path.read_text())

@@ -167,6 +167,7 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
         except ScriptNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    paths = cfg.agent.to_csl_paths()
     started_at = datetime.now(UTC)
     try:
         result = run_script(body.script_name, body.params, approvals, cfg.agent.scripts_dir)
@@ -174,6 +175,16 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ScriptNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = paths.logs_dir / f"{body.job_uuid}.log"
+    with log_path.open("w", encoding="utf-8") as lf:
+        if result.stdout:
+            lf.write(result.stdout)
+        if result.stderr:
+            lf.write(result.stderr)
+        if result.timed_out:
+            lf.write("\n[timed out]\n")
 
     return JobStatusResponse(
         job_uuid=body.job_uuid,
@@ -192,6 +203,16 @@ async def get_job_status(job_uuid: str, request: Request) -> JobStatusResponse:
     pm: ProcessManager = request.app.state.process_manager
     try:
         return pm.get_status(job_uuid)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found") from exc
+
+
+@app.delete("/jobs/{job_uuid}", response_model=JobStatusResponse)
+async def kill_job(job_uuid: str, request: Request) -> JobStatusResponse:
+    """Kill a running persistent job."""
+    pm: ProcessManager = request.app.state.process_manager
+    try:
+        return pm.kill(job_uuid)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found") from exc
 
@@ -216,8 +237,10 @@ async def stream_job_logs(
     pm: ProcessManager = request.app.state.process_manager
     try:
         log_path = pm.get_log_path(job_uuid)
-    except JobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found") from exc
+    except JobNotFoundError:
+        log_path = cfg.agent.to_csl_paths().logs_dir / f"{job_uuid}.log"
+        if not log_path.exists():
+            raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found") from None
 
     if not log_path.exists():
         raise HTTPException(status_code=404, detail=f"log file for job {job_uuid!r} not found")

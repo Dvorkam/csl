@@ -31,6 +31,7 @@ from control_station_lite.server.api import (
 )
 from control_station_lite.server.web import auth as web_auth
 from control_station_lite.server.web import dashboard as web_dashboard
+from control_station_lite.server.web import machines as web_machines
 
 _SERVER_DIR = Path(__file__).parent
 
@@ -99,6 +100,7 @@ app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="s
 # Web (HTML) routes — included before API so /login takes priority over any future conflict
 app.include_router(web_auth.router)
 app.include_router(web_dashboard.router)
+app.include_router(web_machines.router)
 
 # JSON API routes
 app.include_router(health.router)

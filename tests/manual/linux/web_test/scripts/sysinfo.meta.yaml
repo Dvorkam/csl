@@ -1,0 +1,12 @@
+description: Prints system info and repeats a message — tests int param and form validation
+persistent: false
+params:
+  - name: message
+    type: string
+    required: true
+  - name: repeat
+    type: int
+    required: false
+    default: 3
+    min: 1
+    max: 10

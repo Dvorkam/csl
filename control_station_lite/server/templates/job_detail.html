@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Job {{ job.job_uuid[:8] }} — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Job <code class="job-uuid-header">{{ job.job_uuid[:8] }}…</code></h1>
+  <div class="page-header-actions">
+    {% if machine %}
+    <a class="btn btn-sm btn-secondary" href="/machines/{{ machine.id }}">← {{ machine.name }}</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="job-detail-grid">
+  <div class="job-meta-card">
+    <dl class="meta-dl">
+      <dt>Status</dt>
+      <dd><span id="job-status" class="badge badge-{{ job.status }}">{{ job.status }}</span></dd>
+
+      <dt>Script</dt>
+      <dd>{% if script %}{{ script.name }}{% else %}{{ job.built_in_action or '—' }}{% endif %}</dd>
+
+      <dt>Machine</dt>
+      <dd>{% if machine %}<a href="/machines/{{ machine.id }}">{{ machine.name }}</a>{% else %}—{% endif %}</dd>
+
+      <dt>Started</dt>
+      <dd>{{ job.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</dd>
+
+      {% if job.ended_at %}
+      <dt>Ended</dt>
+      <dd>{{ job.ended_at.strftime('%Y-%m-%d %H:%M:%S') }}</dd>
+      {% endif %}
+
+      {% if job.exit_code is not none %}
+      <dt>Exit code</dt>
+      <dd>{{ job.exit_code }}</dd>
+      {% endif %}
+
+      <dt>Persistent</dt>
+      <dd>{{ 'yes' if job.persistent else 'no' }}</dd>
+    </dl>
+
+    {% if job.persistent and job.status == 'running' %}
+    <div class="job-controls">
+      <button class="btn btn-sm btn-danger"
+              id="kill-btn"
+              hx-post="/jobs/{{ job.job_uuid }}/kill"
+              hx-target="#kill-btn"
+              hx-swap="outerHTML"
+              hx-confirm="Kill this job?">Kill job</button>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="log-card">
+    <div class="log-header">
+      <h2>Log</h2>
+      <span id="log-status" class="log-status muted">connecting…</span>
+    </div>
+    <pre id="log-output" class="log-viewer"></pre>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const logEl = document.getElementById("log-output");
+  const statusEl = document.getElementById("log-status");
+  const es = new EventSource("/jobs/{{ job.job_uuid }}/stream");
+
+  es.onopen = function () {
+    statusEl.textContent = "streaming";
+    statusEl.className = "log-status log-streaming";
+  };
+
+  es.onmessage = function (e) {
+    logEl.textContent += e.data + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  es.addEventListener("end", function () {
+    es.close();
+    statusEl.textContent = "done";
+    statusEl.className = "log-status log-done";
+  });
+
+  es.onerror = function () {
+    es.close();
+    statusEl.textContent = "disconnected";
+    statusEl.className = "log-status log-error";
+  };
+})();
+</script>
+{% endblock %}
