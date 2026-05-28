@@ -53,7 +53,7 @@ Always use `uv run` — don't rely on a globally activated venv.
 | Type-check | `uv run mypy control_station_lite` |
 | All pre-commit checks | `uv run pre-commit run --all-files` |
 | Start dev server | `uv run csl-server --reload` |
-| Start agent locally | `uv run csl-agent` (after `csl-agent init`) |
+| Start agent locally | `uv run python -m control_station_lite.agent` (after `csl-agent init`) |
 | Generate migration | `uv run alembic revision --autogenerate -m "..."` |
 | Apply migrations | `uv run alembic upgrade head` |
 

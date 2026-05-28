@@ -137,10 +137,10 @@ The agent is testable in isolation (no control station needed). Build it first t
 - [x] **8.1** Base layout: nav, login state, flash messages.
 - [x] **8.2** Login page.
 - [x] **8.3** Dashboard: machine list with HTMX-driven reachability polling.
-- [ ] **8.4** Machine detail page: status panel, running-jobs list, available-scripts list.
-- [ ] **8.5** Script run dialog: dynamically rendered form from script metadata (string / int / float / bool / choice / path); client-side validation; submit; redirect to job view for persistent jobs. Handles `pending_approval` and `rejected` responses by surfacing the agent state, not a generic error.
-- [ ] **8.6** Live log viewer: SSE-based, auto-scrolling, with kill button for persistent jobs.
-- [ ] **8.7** Approval-state badges on machine detail page: each script in the available-scripts list shows its current state (`approved` / `pending` / `update_pending` / `rejected` / `absent`) with appropriate styling. Hover reveals approved/pending MD5s. A "Re-stage" button is available for `pending` and `update_pending` to prompt the target owner to recheck.
+- [x] **8.4** Machine detail page: status panel, running-jobs list, available-scripts list.
+- [x] **8.5** Script run dialog: dynamically rendered form from script metadata (string / int / float / bool / choice / path); client-side validation; submit; redirect to job view for persistent jobs. Handles `pending_approval` and `rejected` responses by surfacing the agent state, not a generic error.
+- [x] **8.6** Live log viewer: SSE-based, auto-scrolling, with kill button for persistent jobs.
+- [x] **8.7** Approval-state badges on machine detail page: each script in the available-scripts list shows its current state (`approved` / `pending` / `update_pending` / `rejected` / `absent`) with appropriate styling. Hover reveals approved/pending MD5s. A "Re-stage" button is available for `pending` and `update_pending` to prompt the target owner to recheck.
 - [ ] **8.8** Admin: script library page (list, edit, delete).
 - [ ] **8.9** Admin: script editor (monaco-style textarea is sufficient; no full IDE).
 - [ ] **8.10** Admin: machine management page.

@@ -82,6 +82,13 @@ class TestStageEndpoint:
         assert resp.status_code == 409
 
 
+def _stage_and_approve(client: TestClient, name: str, content: str) -> str:
+    md5 = hashlib.md5(content.encode()).hexdigest()
+    client.post(f"/scripts/{name}/stage", json={"content": content, "md5": md5})
+    client.app.state.approvals.approve(name)
+    return md5
+
+
 class TestSubmitJobEndpoint:
     def test_returns_403_when_unapproved(self, isolated_client: TestClient) -> None:
         resp = isolated_client.post(
@@ -89,6 +96,48 @@ class TestSubmitJobEndpoint:
             json={"job_uuid": "abc-123", "script_name": "not_approved"},
         )
         assert resp.status_code == 403
+
+    def test_non_persistent_job_writes_log_file(
+        self, isolated_client: TestClient, tmp_path: Path
+    ) -> None:
+        """Non-persistent jobs must write stdout/stderr to logs_dir/{uuid}.log.
+
+        Regression test for the bug where run_script output was discarded and the
+        job detail log viewer showed nothing.
+        """
+        content = "#!/bin/bash\necho hello-from-script\n"
+        _stage_and_approve(isolated_client, "logger", content)
+        job_uuid = "test-log-uuid-1234"
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": job_uuid, "script_name": "logger", "persistent": False},
+        )
+        assert resp.status_code == 202
+        cfg = isolated_client.app.state.config
+        log_file = cfg.agent.to_csl_paths().logs_dir / f"{job_uuid}.log"
+        assert log_file.exists(), "log file must be written for non-persistent jobs"
+        assert "hello-from-script" in log_file.read_text()
+
+    def test_non_persistent_log_streamable(
+        self, isolated_client: TestClient, tmp_path: Path
+    ) -> None:
+        """stream endpoint must serve the log file written by a completed non-persistent job."""
+        content = "#!/bin/bash\necho streamed-output\n"
+        _stage_and_approve(isolated_client, "streamer", content)
+        job_uuid = "stream-log-uuid-5678"
+        isolated_client.post(
+            "/jobs",
+            json={"job_uuid": job_uuid, "script_name": "streamer", "persistent": False},
+        )
+        resp = isolated_client.get(f"/jobs/{job_uuid}/stream")
+        assert resp.status_code == 200
+        assert "streamed-output" in resp.text
+
+
+class TestKillJobEndpoint:
+    def test_unknown_job_returns_404(self, isolated_client: TestClient) -> None:
+        resp = isolated_client.delete("/jobs/no-such-job")
+        assert resp.status_code == 404
 
 
 class TestStreamJobLogs:
@@ -115,6 +164,7 @@ _EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
     ("POST", "/scripts/{name}/stage"),
     ("POST", "/jobs"),
     ("GET", "/jobs/{job_uuid}"),
+    ("DELETE", "/jobs/{job_uuid}"),
     ("GET", "/jobs/{job_uuid}/stream"),
 }
 

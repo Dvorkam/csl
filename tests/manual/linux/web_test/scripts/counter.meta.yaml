@@ -1,0 +1,3 @@
+description: Counts forever — use this to test the live log viewer and kill button
+persistent: true
+params: []

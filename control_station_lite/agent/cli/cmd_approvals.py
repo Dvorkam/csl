@@ -25,6 +25,7 @@ __all__ = [
     "cmd_approvals_clear",
     "cmd_approvals_diff",
     "cmd_approvals_list",
+    "cmd_approvals_purge",
     "cmd_approvals_reject",
     "cmd_approvals_show",
     "dispatch_approvals",
@@ -162,6 +163,51 @@ def cmd_approvals_reject(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_approvals_purge(args: argparse.Namespace) -> None:
+    """Remove entries whose backing files are missing (orphaned by fuzzing or partial teardowns)."""
+    mgr, cfg = _load_approvals()
+    from control_station_lite.agent.approvals import ApprovalError, ApprovalsManager
+    from control_station_lite.agent.config import AgentConfig
+
+    assert isinstance(mgr, ApprovalsManager)
+    assert isinstance(cfg, AgentConfig)
+    paths = cfg.agent.to_csl_paths()
+
+    dry_run: bool = getattr(args, "dry_run", False)
+    removed = 0
+    skipped = 0
+    for descriptor in mgr.list_all():
+        name = descriptor.name
+        state = str(descriptor.state)
+        if state == "approved":
+            approved_file = paths.scripts_dir / name
+            if approved_file.exists():
+                skipped += 1
+                continue
+        elif state in ("pending", "update_pending"):
+            pending_file = paths.pending_dir / name
+            if pending_file.exists():
+                skipped += 1
+                continue
+        else:
+            skipped += 1
+            continue
+
+        if dry_run:
+            print(f"  would remove: {name} ({state})")
+        else:
+            try:
+                mgr.clear(name)
+                removed += 1
+            except ApprovalError as exc:
+                print(f"  warning: could not clear {name!r}: {exc}", file=sys.stderr)
+
+    if dry_run:
+        print(f"Dry run: {skipped} entries kept, would remove orphaned entries above.")
+    else:
+        print(f"Purged {removed} orphaned entries. {skipped} entries kept.")
+
+
 def cmd_approvals_clear(args: argparse.Namespace) -> None:
     mgr, _ = _load_approvals()
     from control_station_lite.agent.approvals import ApprovalError, ApprovalsManager
@@ -183,6 +229,7 @@ def dispatch_approvals(args: argparse.Namespace, parent: argparse.ArgumentParser
         "approve": cmd_approvals_approve,
         "reject": cmd_approvals_reject,
         "clear": cmd_approvals_clear,
+        "purge": cmd_approvals_purge,
     }.get(args.approvals_cmd or "")
     if fn is None:
         parent.print_help()

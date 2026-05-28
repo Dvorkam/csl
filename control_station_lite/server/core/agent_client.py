@@ -183,13 +183,13 @@ class AgentClient:
     ) -> StageScriptResponse:
         assert self._http is not None
         body = StageScriptRequest(content=content, md5=md5, meta_yaml=meta_yaml)
-        resp = await self._http.post(f"/scripts/{name}/stage", content=body.model_dump_json())
+        resp = await self._http.post(f"/scripts/{name}/stage", json=body.model_dump())
         resp.raise_for_status()
         return StageScriptResponse.model_validate(resp.json())
 
     async def submit_job(self, request: JobRequest) -> JobStatusResponse:
         assert self._http is not None
-        resp = await self._http.post("/jobs", content=request.model_dump_json())
+        resp = await self._http.post("/jobs", json=request.model_dump())
         resp.raise_for_status()
         return JobStatusResponse.model_validate(resp.json())
 

@@ -62,6 +62,8 @@ a:hover { text-decoration: underline; }
               border-color: var(--border); }
 .btn-ghost:hover { background: var(--bg); }
 .btn-sm     { padding: .3rem .7rem; font-size: .8rem; }
+.btn-refresh { padding: .2rem .4rem; font-size: .85rem; opacity: .6; }
+.btn-refresh:hover { opacity: 1; }
 .btn-full   { width: 100%; }
 button.btn  { font-family: inherit; }
 
@@ -103,6 +105,110 @@ button.btn  { font-family: inherit; }
 /* ── Empty state ── */
 .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
 .empty-state p { margin-bottom: .5rem; }
+
+/* ── Detail sections ── */
+.detail-section { margin-bottom: 2rem; }
+.detail-section h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: .75rem;
+                     padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+
+/* ── Page header row ── */
+.page-header-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .4rem; }
+.page-header-meta { display: flex; flex-wrap: wrap; align-items: center;
+                    gap: .4rem; margin-bottom: .5rem; }
+.page-header-actions { margin-bottom: .75rem; }
+
+/* ── Approval-state badges ── */
+.approval-badge { display: inline-block; padding: .2rem .55rem; border-radius: 999px;
+                  font-size: .75rem; font-weight: 600; text-transform: lowercase; }
+.approval-approved       { background: #dcfce7; color: #166534; }
+.approval-pending        { background: #fef9c3; color: #854d0e; }
+.approval-update_pending { background: #ffedd5; color: #9a3412; }
+.approval-rejected       { background: #fee2e2; color: #991b1b; }
+.approval-absent         { background: #f1f5f9; color: var(--muted); }
+.approval-approved_stale { background: #fef3c7; color: #92400e; }
+
+/* ── Job status badges ── */
+.badge-running   { background: #dbeafe; color: #1e40af; }
+.badge-pending   { background: #fef9c3; color: #854d0e; }
+.badge-completed { background: #dcfce7; color: #166534; }
+.badge-failed    { background: #fee2e2; color: #991b1b; }
+.badge-killed    { background: #f3e8ff; color: #6b21a8; }
+.badge-error     { background: #fee2e2; color: #991b1b; }
+.badge-persistent { background: #e0e7ff; color: #3730a3; }
+
+/* ── Script table ── */
+.script-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.script-table th { text-align: left; padding: .5rem .75rem; border-bottom: 2px solid var(--border);
+                   font-weight: 600; color: var(--muted); font-size: .8rem; text-transform: uppercase; }
+.script-table td { padding: .6rem .75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.script-table tr:last-child td { border-bottom: none; }
+.script-desc { font-size: .78rem; margin-top: .15rem; }
+.md5 { font-family: monospace; font-size: .8rem; color: var(--muted); }
+.md5-cell { white-space: nowrap; }
+
+/* ── Running jobs list ── */
+.job-list { display: flex; flex-direction: column; gap: .4rem; }
+.job-row  { display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); }
+.job-uuid { font-family: monospace; font-size: .85rem; }
+
+/* ── Run dialog ── */
+.run-card { max-width: 560px; background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.5rem; }
+.run-form { display: flex; flex-direction: column; gap: 1rem; }
+.form-group { display: flex; flex-direction: column; gap: .3rem; }
+.form-group label { font-size: .875rem; font-weight: 500; }
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select {
+  padding: .45rem .7rem; border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: .9rem; font-family: inherit;
+  background: var(--surface);
+}
+.form-group input:focus,
+.form-group select:focus { outline: none; border-color: var(--accent);
+                            box-shadow: 0 0 0 2px rgba(37,99,235,.15); }
+.checkbox-label { display: flex; align-items: center; gap: .4rem;
+                  font-weight: 400; cursor: pointer; }
+.help-text { font-size: .78rem; color: var(--muted); }
+.required  { color: var(--danger); }
+.no-params { font-style: italic; }
+.form-actions { display: flex; gap: .5rem; margin-top: .5rem; }
+
+/* ── Job detail ── */
+.job-detail-grid { display: grid; grid-template-columns: 280px 1fr; gap: 1.25rem;
+                   align-items: start; }
+@media (max-width: 700px) {
+  .job-detail-grid { grid-template-columns: 1fr; }
+}
+.job-meta-card { background: var(--surface); border: 1px solid var(--border);
+                 border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.25rem; }
+.meta-dl { display: grid; grid-template-columns: auto 1fr; gap: .35rem .75rem;
+           font-size: .875rem; }
+.meta-dl dt { font-weight: 600; color: var(--muted); }
+.meta-dl dd { margin: 0; }
+.job-controls { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .75rem; }
+.job-uuid-header { font-size: 1rem; }
+
+/* ── Log viewer ── */
+.log-card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.log-header { display: flex; align-items: center; justify-content: space-between;
+              padding: .6rem 1rem; border-bottom: 1px solid var(--border); }
+.log-header h2 { font-size: .95rem; font-weight: 600; margin: 0; }
+.log-status { font-size: .78rem; }
+.log-streaming { color: var(--accent); }
+.log-done      { color: var(--success); }
+.log-error     { color: var(--danger); }
+.log-viewer { margin: 0; padding: 1rem; min-height: 300px; max-height: 60vh;
+              overflow-y: auto; font-family: monospace; font-size: .8rem;
+              line-height: 1.55; background: #0f172a; color: #e2e8f0;
+              white-space: pre-wrap; word-break: break-all; }
+
+/* ── Danger button ── */
+.btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
 
 /* ── Login page ── */
 .login-body { display: flex; align-items: center; justify-content: center;
