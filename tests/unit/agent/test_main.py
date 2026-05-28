@@ -135,6 +135,40 @@ class TestSubmitJobEndpoint:
         assert resp.status_code == 200
         assert "streamed-output" in resp.text
 
+    @pytest.mark.windows_only
+    def test_non_persistent_job_writes_log_file_windows(
+        self, isolated_client: TestClient, tmp_path: Path
+    ) -> None:
+        """Windows equivalent: non-persistent .ps1 jobs must write output to logs_dir/{uuid}.log."""
+        content = "Write-Host hello-from-ps1\n"
+        _stage_and_approve(isolated_client, "logger.ps1", content)
+        job_uuid = "test-log-uuid-win-1234"
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": job_uuid, "script_name": "logger.ps1", "persistent": False},
+        )
+        assert resp.status_code == 202
+        cfg = isolated_client.app.state.config
+        log_file = cfg.agent.to_csl_paths().logs_dir / f"{job_uuid}.log"
+        assert log_file.exists(), "log file must be written for non-persistent jobs"
+        assert "hello-from-ps1" in log_file.read_text()
+
+    @pytest.mark.windows_only
+    def test_non_persistent_log_streamable_windows(
+        self, isolated_client: TestClient, tmp_path: Path
+    ) -> None:
+        """Windows equivalent: stream endpoint must serve the log of a completed non-persistent job."""  # noqa: E501
+        content = "Write-Host streamed-output-ps1\n"
+        _stage_and_approve(isolated_client, "streamer.ps1", content)
+        job_uuid = "stream-log-uuid-win-5678"
+        isolated_client.post(
+            "/jobs",
+            json={"job_uuid": job_uuid, "script_name": "streamer.ps1", "persistent": False},
+        )
+        resp = isolated_client.get(f"/jobs/{job_uuid}/stream")
+        assert resp.status_code == 200
+        assert "streamed-output-ps1" in resp.text
+
 
 class TestKillJobEndpoint:
     def test_unknown_job_returns_404(self, isolated_client: TestClient) -> None:
