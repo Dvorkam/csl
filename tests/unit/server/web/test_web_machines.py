@@ -100,7 +100,7 @@ async def script(db_session: AsyncSession, admin_user: User) -> Script:
     s = Script(
         name="hello",
         content="echo hello",
-        meta_yaml="description: Says hello\nparams:\n  - name: target\n    type: string\n    required: true\n",
+        meta_yaml="description: Says hello\nparams:\n  - name: target\n    type: string\n    required: true\n",  # noqa: E501
         md5="abc123",
         persistent=False,
         updated_at=datetime.utcnow(),
@@ -178,9 +178,7 @@ def test_machine_detail_403_for_unbookmarked_user(
     assert resp.status_code == 403
 
 
-def test_machine_detail_404_for_unknown_machine(
-    client: TestClient, admin_user: User
-) -> None:
+def test_machine_detail_404_for_unknown_machine(client: TestClient, admin_user: User) -> None:
     resp = client.get("/machines/9999", cookies=_auth(admin_user))
     assert resp.status_code == 404
 
@@ -250,9 +248,7 @@ def test_machine_detail_shows_running_jobs(
     assert b"aaaabbbb" in resp.content
 
 
-def test_machine_detail_redirect_when_unauthenticated(
-    client: TestClient, machine: Machine
-) -> None:
+def test_machine_detail_redirect_when_unauthenticated(client: TestClient, machine: Machine) -> None:
     resp = client.get(f"/machines/{machine.id}")
     assert resp.status_code == 302
 
@@ -289,9 +285,7 @@ def test_run_form_renders_no_params_for_paramless_script(
 def test_run_form_404_for_unknown_script(
     client: TestClient, admin_user: User, machine: Machine
 ) -> None:
-    resp = client.get(
-        f"/machines/{machine.id}/scripts/nonexistent/run", cookies=_auth(admin_user)
-    )
+    resp = client.get(f"/machines/{machine.id}/scripts/nonexistent/run", cookies=_auth(admin_user))
     assert resp.status_code == 404
 
 
@@ -557,9 +551,7 @@ def test_job_detail_shows_script_name(
     assert b"hello" in resp.content
 
 
-def test_job_detail_404_for_unknown_job(
-    client: TestClient, admin_user: User
-) -> None:
+def test_job_detail_404_for_unknown_job(client: TestClient, admin_user: User) -> None:
     resp = client.get("/jobs/no-such-uuid", cookies=_auth(admin_user))
     assert resp.status_code == 404
 
@@ -574,7 +566,9 @@ def test_job_detail_shows_kill_button_for_running_persistent_job(
     import asyncio
 
     job = asyncio.get_event_loop().run_until_complete(
-        _seed_job(db_session, machine, persistent_script, admin_user, persistent=True, status="running")
+        _seed_job(
+            db_session, machine, persistent_script, admin_user, persistent=True, status="running"
+        )  # noqa: E501
     )
     resp = client.get(f"/jobs/{job.job_uuid}", cookies=_auth(admin_user))
     assert resp.status_code == 200
@@ -682,7 +676,9 @@ def test_job_kill_returns_killed_badge(
     monkeypatch.setattr(machines_mod, "AgentClient", _MockClient)
 
     job = asyncio.get_event_loop().run_until_complete(
-        _seed_job(db_session, machine, persistent_script, admin_user, persistent=True, status="running")
+        _seed_job(
+            db_session, machine, persistent_script, admin_user, persistent=True, status="running"
+        )  # noqa: E501
     )
     resp = client.post(f"/jobs/{job.job_uuid}/kill", cookies=_auth(admin_user))
     assert resp.status_code == 200

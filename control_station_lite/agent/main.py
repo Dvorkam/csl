@@ -240,7 +240,7 @@ async def stream_job_logs(
     except JobNotFoundError:
         log_path = cfg.agent.to_csl_paths().logs_dir / f"{job_uuid}.log"
         if not log_path.exists():
-            raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found")
+            raise HTTPException(status_code=404, detail=f"job {job_uuid!r} not found") from None
 
     if not log_path.exists():
         raise HTTPException(status_code=404, detail=f"log file for job {job_uuid!r} not found")

@@ -25,7 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from control_station_lite.server.config import get_settings
 from control_station_lite.server.core.agent_client import AgentClient, AgentClientError
 from control_station_lite.server.core.crypto import decrypt
-from control_station_lite.server.core.script_registry import ScriptRegistryError, get_script_or_raise
+from control_station_lite.server.core.script_registry import (
+    ScriptRegistryError,
+    get_script_or_raise,
+)
 from control_station_lite.server.core.script_sync import sync_script
 from control_station_lite.server.core.ssh import get_ssh_pool
 from control_station_lite.server.db.models import (
@@ -226,7 +229,9 @@ async def run_submit(
             params[p.name] = raw is not None
         elif p.type.value == "int":
             try:
-                params[p.name] = int(raw) if raw else (int(p.default) if p.default is not None else 0)
+                params[p.name] = (
+                    int(raw) if raw else (int(p.default) if p.default is not None else 0)
+                )  # noqa: E501
             except (ValueError, TypeError):
                 params[p.name] = 0
         elif p.type.value == "float":
@@ -324,8 +329,14 @@ async def script_state_badge(
         return templates.TemplateResponse(
             request,
             "partials/script_state_badge.html",
-            {"script_id": 0, "machine_id": machine_id, "script_name": script_name,
-             "state": "absent", "approved_md5": None, "pending_md5": None},
+            {
+                "script_id": 0,
+                "machine_id": machine_id,
+                "script_name": script_name,
+                "state": "absent",
+                "approved_md5": None,
+                "pending_md5": None,
+            },
         )
 
     private_key = decrypt(machine.ssh_key_encrypted, get_settings().read_master_key())
@@ -347,19 +358,28 @@ async def script_state_badge(
         return templates.TemplateResponse(
             request,
             "partials/script_state_badge.html",
-            {"script_id": script.id, "machine_id": machine_id, "script_name": script_name,
-             "state": cached_row.state if cached_row else "absent",
-             "approved_md5": cached_row.approved_md5 if cached_row else None,
-             "pending_md5": cached_row.pending_md5 if cached_row else None},
+            {
+                "script_id": script.id,
+                "machine_id": machine_id,
+                "script_name": script_name,
+                "state": cached_row.state if cached_row else "absent",
+                "approved_md5": cached_row.approved_md5 if cached_row else None,
+                "pending_md5": cached_row.pending_md5 if cached_row else None,
+            },
         )
 
     now = datetime.utcnow()
     if cached_row is None:
-        session.add(ScriptTargetState(
-            machine_id=machine_id, script_id=script.id, state=new_state,
-            approved_md5=descriptor.approved_md5, pending_md5=descriptor.pending_md5,
-            last_refreshed_at=now,
-        ))
+        session.add(
+            ScriptTargetState(
+                machine_id=machine_id,
+                script_id=script.id,
+                state=new_state,
+                approved_md5=descriptor.approved_md5,
+                pending_md5=descriptor.pending_md5,
+                last_refreshed_at=now,
+            )
+        )
     else:
         cached_row.state = new_state
         cached_row.approved_md5 = descriptor.approved_md5
@@ -370,9 +390,14 @@ async def script_state_badge(
     return templates.TemplateResponse(
         request,
         "partials/script_state_badge.html",
-        {"script_id": script.id, "machine_id": machine_id, "script_name": script_name,
-         "state": new_state, "approved_md5": descriptor.approved_md5,
-         "pending_md5": descriptor.pending_md5},
+        {
+            "script_id": script.id,
+            "machine_id": machine_id,
+            "script_name": script_name,
+            "state": new_state,
+            "approved_md5": descriptor.approved_md5,
+            "pending_md5": descriptor.pending_md5,
+        },
     )
 
 
