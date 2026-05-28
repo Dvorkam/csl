@@ -47,15 +47,24 @@
 {% endif %}
 
 <section class="detail-section">
-  <h2>Scripts</h2>
+  <div class="section-header-row">
+    <h2>Scripts</h2>
+    <div class="section-header-actions">
+      {% if show_all %}
+      <a class="btn btn-sm btn-ghost" href="/machines/{{ machine.id }}">Show deployed only</a>
+      {% else %}
+      <a class="btn btn-sm btn-ghost" href="/machines/{{ machine.id }}?show_all=true">Show all ({{ "includes undeployed" }})</a>
+      {% endif %}
+    </div>
+  </div>
+
   {% if script_states %}
   <table class="script-table">
     <thead>
       <tr>
         <th>Name</th>
-        <th>Approval state</th>
+        <th>Approval state &amp; actions</th>
         <th>Approved MD5</th>
-        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -71,7 +80,11 @@
         {% endif %}
       </td>
       <td>
-        <div id="state-{{ ss.script.id }}">
+        <div id="state-{{ ss.script.id }}"
+             hx-get="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/state-badge"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+          {# Initial render from DB cache; HTMX will replace on load with live agent state #}
           <span class="approval-badge approval-{{ ss.state }}"
                 title="approved MD5: {{ ss.approved_md5 or '—' }}&#10;pending MD5: {{ ss.pending_md5 or '—' }}">{{ ss.state }}</span>
           <button class="btn btn-sm btn-ghost btn-refresh"
@@ -79,30 +92,42 @@
                   hx-target="#state-{{ ss.script.id }}"
                   hx-swap="innerHTML"
                   title="Refresh state from agent">&#8635;</button>
-          {% if ss.state in ('pending', 'update_pending') %}
+          {% if ss.state == 'approved' or ss.state == 'approved_stale' %}
+          <a class="btn btn-sm btn-primary{% if ss.state == 'approved_stale' %} btn-warn{% endif %}"
+             href="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/run">Run</a>
+          {% elif ss.state == 'absent' %}
           <button class="btn btn-sm btn-secondary"
                   hx-post="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/restage"
                   hx-target="#state-{{ ss.script.id }}"
                   hx-swap="innerHTML"
-                  hx-indicator="#state-{{ ss.script.id }}">Re-stage</button>
+                  title="Stage this script on the agent for target-owner approval">Stage</button>
+          {% elif ss.state in ('pending', 'update_pending') %}
+          <button class="btn btn-sm btn-secondary"
+                  hx-post="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/restage"
+                  hx-target="#state-{{ ss.script.id }}"
+                  hx-swap="innerHTML">Re-stage</button>
+          <span class="approval-action-note">Awaiting approval on target</span>
+          {% elif ss.state == 'rejected' %}
+          <span class="approval-action-note">Run <code>csl-agent approvals clear {{ ss.script.name }}</code> on target to reset</span>
           {% endif %}
         </div>
       </td>
       <td class="md5-cell">
         <span class="md5" title="{{ ss.approved_md5 or '' }}">{{ (ss.approved_md5 or '—')[:8] }}</span>
       </td>
-      <td>
-        <a class="btn btn-sm btn-primary" href="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/run">Run</a>
-      </td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
-  {% else %}
+  {% elif show_all %}
   <p class="muted">No scripts in the library yet.
     {% if user.role == "admin" %}
     <a href="/admin/scripts">Add a script</a>.
     {% endif %}
+  </p>
+  {% else %}
+  <p class="muted">No scripts have been deployed to this machine yet.
+    <a href="/machines/{{ machine.id }}?show_all=true">Show all library scripts</a> to stage one.
   </p>
   {% endif %}
 </section>

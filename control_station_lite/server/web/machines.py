@@ -104,6 +104,7 @@ async def machine_detail(
     machine_id: int,
     request: Request,
     response: Response,
+    show_all: bool = False,
     user: User = Depends(web_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
@@ -121,6 +122,10 @@ async def machine_detail(
     script_states = []
     for s in all_scripts:
         row = states_by_id.get(s.id)
+        state = row.state if row else "absent"
+        # Default view: hide scripts that have never been staged to this machine
+        if not show_all and state == "absent":
+            continue
         try:
             desc = parse_meta_yaml(s.meta_yaml).description if s.meta_yaml else ""
         except ScriptMetaError:
@@ -129,7 +134,7 @@ async def machine_detail(
             {
                 "script": s,
                 "description": desc,
-                "state": row.state if row else "absent",
+                "state": state,
                 "approved_md5": row.approved_md5 if row else None,
                 "pending_md5": row.pending_md5 if row else None,
             }
@@ -155,6 +160,7 @@ async def machine_detail(
             "machine": machine,
             "script_states": script_states,
             "running_jobs": running_jobs,
+            "show_all": show_all,
             "flash": flash,
         },
     )

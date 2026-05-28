@@ -141,11 +141,12 @@ The agent is testable in isolation (no control station needed). Build it first t
 - [x] **8.5** Script run dialog: dynamically rendered form from script metadata (string / int / float / bool / choice / path); client-side validation; submit; redirect to job view for persistent jobs. Handles `pending_approval` and `rejected` responses by surfacing the agent state, not a generic error.
 - [x] **8.6** Live log viewer: SSE-based, auto-scrolling, with kill button for persistent jobs.
 - [x] **8.7** Approval-state badges on machine detail page: each script in the available-scripts list shows its current state (`approved` / `pending` / `update_pending` / `rejected` / `absent`) with appropriate styling. Hover reveals approved/pending MD5s. A "Re-stage" button is available for `pending` and `update_pending` to prompt the target owner to recheck.
-- [ ] **8.8** Admin: script library page (list, edit, delete).
-- [ ] **8.9** Admin: script editor (monaco-style textarea is sufficient; no full IDE).
-- [ ] **8.10** Admin: machine management page.
-- [ ] **8.11** Admin: user management page.
-- [ ] **8.12** Admin: audit log viewer with filters.
+- [x] **8.8** Admin: script library page (list, edit, delete).
+- [x] **8.9** Admin: script editor (monaco-style textarea is sufficient; no full IDE).
+- [x] **8.10** Admin: machine management page.
+- [x] **8.11** Admin: user management page.
+- [x] **8.12** Admin: audit log viewer with filters.
+- [ ] **8.13** Job history page: list of past job runs (filterable by machine/script/status), each row links to the existing job detail/log viewer.
 
 ---
 

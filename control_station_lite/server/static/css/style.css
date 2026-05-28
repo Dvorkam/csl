@@ -110,6 +110,15 @@ button.btn  { font-family: inherit; }
 .detail-section { margin-bottom: 2rem; }
 .detail-section h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: .75rem;
                      padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+.section-header-row { display: flex; align-items: center; justify-content: space-between;
+                      margin-bottom: .75rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+.section-header-row h2 { font-size: 1.1rem; font-weight: 600; margin: 0; border: none; padding: 0; }
+.section-header-actions { display: flex; gap: .4rem; }
+.approval-action-note { font-size: .78rem; color: var(--muted); font-style: italic; }
+.approval-action-note code { font-style: normal; background: var(--bg); padding: .1rem .3rem;
+                              border-radius: 3px; font-size: .75rem; }
+.btn-warn { background: var(--warn); color: #fff; border-color: var(--warn); }
+.btn-warn:hover { background: #b45309; border-color: #b45309; }
 
 /* ── Page header row ── */
 .page-header-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .4rem; }

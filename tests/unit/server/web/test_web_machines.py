@@ -186,7 +186,8 @@ def test_machine_detail_404_for_unknown_machine(client: TestClient, admin_user: 
 def test_machine_detail_shows_script_name(
     client: TestClient, admin_user: User, machine: Machine, script: Script
 ) -> None:
-    resp = client.get(f"/machines/{machine.id}", cookies=_auth(admin_user))
+    # show_all=true needed: script has no ScriptTargetState row, so default view hides it
+    resp = client.get(f"/machines/{machine.id}?show_all=true", cookies=_auth(admin_user))
     assert b"hello" in resp.content
 
 

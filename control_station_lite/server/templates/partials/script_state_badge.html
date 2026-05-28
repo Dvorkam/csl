@@ -5,10 +5,23 @@
         hx-target="#state-{{ script_id }}"
         hx-swap="innerHTML"
         title="Refresh state from agent">&#8635;</button>
-{% if state in ('pending', 'update_pending') %}
+{% if state == 'approved' or state == 'approved_stale' %}
+<a class="btn btn-sm btn-primary{% if state == 'approved_stale' %} btn-warn{% endif %}"
+   href="/machines/{{ machine_id }}/scripts/{{ script_name }}/run"
+   title="{% if state == 'approved_stale' %}Script content has changed — approved version may be stale{% endif %}">Run</a>
+{% elif state == 'absent' %}
 <button class="btn btn-sm btn-secondary"
         hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
         hx-target="#state-{{ script_id }}"
         hx-swap="innerHTML"
-        hx-indicator="#state-{{ script_id }}">Re-stage</button>
+        title="Stage this script on the agent for target-owner approval">Stage</button>
+{% elif state in ('pending', 'update_pending') %}
+<button class="btn btn-sm btn-secondary"
+        hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
+        hx-target="#state-{{ script_id }}"
+        hx-swap="innerHTML"
+        title="Re-send to agent for approval">Re-stage</button>
+<span class="approval-action-note">Awaiting approval on target</span>
+{% elif state == 'rejected' %}
+<span class="approval-action-note">Run <code>csl-agent approvals clear {{ script_name }}</code> on target to reset</span>
 {% endif %}
