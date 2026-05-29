@@ -2,12 +2,10 @@
 
 > A self-hosted dashboard for running scripts on your LAN machines — where the machine owner decides what can run.
 
-**Status:** Early development. The agent (target machine side) is functional today. The control station (web UI + server) is under active development.
-
 | Component | Status |
 |---|---|
 | Agent — `csl-agent` | Alpha — install and use today |
-| Control station + web UI | In development |
+| Control station + web UI | Alpha — functional, packaging in progress |
 
 ---
 
@@ -54,7 +52,7 @@ The control station never gets a shell on the target — it only talks to the ag
 
 ## Agent quick-start
 
-The agent runs on each target machine. Install it once; the control station will start it on demand over SSH.
+The agent runs on each target machine. Install it once; the control station starts it on demand over SSH.
 
 ### 1. Install
 
@@ -70,7 +68,7 @@ pip install control-station-lite[agent]
 csl-agent setup
 ```
 
-This checks that an SSH server is installed and running, and attempts to fix common issues automatically.
+Checks that an SSH server is installed and running, and attempts to fix common issues automatically.
 
 ### 3. Initialise
 
@@ -111,7 +109,68 @@ csl-agent policy manual sleep_machine   # revoke auto-approval
 
 ---
 
-## Configuration
+## Control station quick-start
+
+The control station is the always-on component (typically a NAS or home server) that hosts the web UI.
+
+> **Note:** Docker/nginx packaging is in progress (Phase 10). For now, run it directly.
+
+### 1. Install
+
+```bash
+pip install control-station-lite[server]
+```
+
+### 2. Create secrets
+
+```bash
+# JWT signing key
+openssl rand -hex 64 > secrets/jwt.key
+
+# Master encryption key (must be exactly 32 bytes, base64-encoded)
+python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())" > secrets/master.key
+```
+
+### 3. Configure
+
+Set environment variables (or use a `.env` file):
+
+```bash
+export CSL_JWT_KEY_PATH=secrets/jwt.key
+export CSL_MASTER_KEY_PATH=secrets/master.key
+export CSL_DATABASE_URL=sqlite+aiosqlite:///data/csl.db   # default
+```
+
+### 4. Initialise the database and create an admin user
+
+```bash
+csl-server migrate          # runs Alembic migrations
+csl-admin create-admin      # prompts for username + password
+```
+
+### 5. Start
+
+```bash
+csl-server
+```
+
+The web UI is available at `http://localhost:8000`.
+
+---
+
+## Web UI features
+
+- **Dashboard** — machine list with live SSH reachability indicator
+- **Machine detail** — approval state for every script, Wake-on-LAN, running persistent jobs
+- **Script approval flow** — badge per script: `approved` / `pending` / `update_pending` / `rejected` / `approved_stale`; one-click stage/re-stage; auto-refresh on page open (single SSH tunnel per machine)
+- **Script run dialog** — dynamic form built from script metadata (string / int / float / bool / choice params); approval errors surfaced inline
+- **Live log viewer** — SSE-based streaming, auto-scrolling, kill button for persistent jobs
+- **Job history** — filterable list of all past runs, links to log viewer
+- **Admin panel** — script library editor, machine management, user management, audit log viewer
+
+---
+
+## Agent configuration
 
 `csl-agent init` writes `~/.csl/config.yaml` with sensible defaults. Edit it to customise:
 
@@ -130,23 +189,7 @@ advanced:
   windows_admin_authorized_keys_path: C:/ProgramData/ssh/administrators_authorized_keys
 ```
 
-All paths support `~` expansion. Unknown fields are logged and ignored (safe to add comments).
-
----
-
-## Control station
-
-The control station is the NAS-side component: a web UI and REST API that coordinates script management, user access, and communication with agents. It is currently under active development.
-
-Planned deployment: Docker Compose on a NAS or always-on Linux host, fronted by nginx for TLS. A single bootstrap script handles first-time setup.
-
-Planned features for v0.1:
-- Web UI with per-machine dashboards
-- Script library with per-user parameter forms
-- Persistent process management with live log streaming
-- Wake-on-LAN
-- Audit log
-- User/admin roles with JWT auth
+All paths support `~` expansion. Unknown fields are logged and ignored.
 
 ---
 

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Job History — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Job History</h1>
+</div>
+
+<form method="get" action="/jobs" class="filter-bar">
+  <select name="machine_id" onchange="this.form.submit()">
+    <option value="">All machines</option>
+    {% for m in machines %}
+    <option value="{{ m.id }}"{% if filter_machine_id == m.id %} selected{% endif %}>{{ m.name }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="script_name" onchange="this.form.submit()">
+    <option value="">All scripts</option>
+    {% for s in scripts %}
+    <option value="{{ s.name }}"{% if filter_script_name == s.name %} selected{% endif %}>{{ s.name }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="status" onchange="this.form.submit()">
+    <option value="">All statuses</option>
+    {% for st in statuses %}
+    <option value="{{ st }}"{% if filter_status == st %} selected{% endif %}>{{ st }}</option>
+    {% endfor %}
+  </select>
+
+  {% if filter_machine_id or filter_script_name or filter_status %}
+  <a class="btn btn-sm btn-ghost" href="/jobs">Clear</a>
+  {% endif %}
+</form>
+
+{% if jobs %}
+<table class="admin-table">
+  <thead>
+    <tr>
+      <th>Job</th>
+      <th>Machine</th>
+      <th>Script</th>
+      <th>Status</th>
+      <th>Started</th>
+      <th>Duration</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in jobs %}
+  <tr>
+    <td>
+      <a class="job-uuid" href="/jobs/{{ row.job.job_uuid }}">{{ row.job.job_uuid[:8] }}…</a>
+    </td>
+    <td>
+      {% if row.machine %}
+      <a href="/machines/{{ row.machine.id }}">{{ row.machine.name }}</a>
+      {% else %}
+      <span class="muted">—</span>
+      {% endif %}
+    </td>
+    <td>{{ row.script.name if row.script else '—' }}</td>
+    <td><span class="badge badge-{{ row.job.status }}">{{ row.job.status }}</span></td>
+    <td class="nowrap">{{ row.job.started_at.strftime('%Y-%m-%d %H:%M') if row.job.started_at else '—' }}</td>
+    <td class="nowrap">
+      {{ row.duration }}
+      {% if row.running %}<span class="log-streaming">&#9679;</span>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if has_prev or has_next %}
+<div class="pagination">
+  {% if has_prev %}
+  <a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{% if filter_machine_id %}&machine_id={{ filter_machine_id }}{% endif %}{% if filter_script_name %}&script_name={{ filter_script_name }}{% endif %}{% if filter_status %}&status={{ filter_status }}{% endif %}">← Prev</a>
+  {% endif %}
+  <span class="muted">Page {{ page }} · {{ total }} total</span>
+  {% if has_next %}
+  <a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{% if filter_machine_id %}&machine_id={{ filter_machine_id }}{% endif %}{% if filter_script_name %}&script_name={{ filter_script_name }}{% endif %}{% if filter_status %}&status={{ filter_status }}{% endif %}">Next →</a>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted" style="margin-top:.5rem;font-size:.85rem;">{{ total }} job{{ 's' if total != 1 }}</p>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+  <p>No jobs match the current filters.</p>
+  {% if filter_machine_id or filter_script_name or filter_status %}
+  <p><a href="/jobs">Clear filters</a></p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Scripts — Admin — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header-row">
+  <h1>Script Library</h1>
+  <a class="btn btn-primary btn-sm" href="/admin/scripts/new">+ New script</a>
+</div>
+
+{% if not scripts %}
+<div class="empty-state"><p>No scripts yet. Create one to get started.</p></div>
+{% else %}
+<table class="admin-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>MD5</th>
+      <th>Type</th>
+      <th>Updated</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in scripts %}
+    <tr>
+      <td>
+        <strong>{{ s.name }}</strong>
+        {% if s.meta_yaml %}
+        <div class="admin-sub">has meta.yaml</div>
+        {% endif %}
+      </td>
+      <td class="md5-cell"><span class="md5">{{ s.md5[:12] }}</span></td>
+      <td>
+        {% if s.persistent %}
+        <span class="badge badge-persistent">persistent</span>
+        {% else %}
+        <span class="admin-sub">one-off</span>
+        {% endif %}
+      </td>
+      <td class="admin-sub">{{ s.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td class="admin-actions">
+        <a class="btn btn-sm btn-secondary" href="/admin/scripts/{{ s.name }}/edit">Edit</a>
+        <form method="post" action="/admin/scripts/{{ s.name }}/delete"
+              onsubmit="return confirm('Delete script {{ s.name }}?')">
+          <button class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

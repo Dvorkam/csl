@@ -110,6 +110,15 @@ button.btn  { font-family: inherit; }
 .detail-section { margin-bottom: 2rem; }
 .detail-section h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: .75rem;
                      padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+.section-header-row { display: flex; align-items: center; justify-content: space-between;
+                      margin-bottom: .75rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+.section-header-row h2 { font-size: 1.1rem; font-weight: 600; margin: 0; border: none; padding: 0; }
+.section-header-actions { display: flex; gap: .4rem; }
+.approval-action-note { font-size: .78rem; color: var(--muted); font-style: italic; }
+.approval-action-note code { font-style: normal; background: var(--bg); padding: .1rem .3rem;
+                              border-radius: 3px; font-size: .75rem; }
+.btn-warn { background: var(--warn); color: #fff; border-color: var(--warn); }
+.btn-warn:hover { background: #b45309; border-color: #b45309; }
 
 /* ── Page header row ── */
 .page-header-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .4rem; }
@@ -209,6 +218,40 @@ button.btn  { font-family: inherit; }
 /* ── Danger button ── */
 .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
+
+/* ── Admin pages ── */
+.admin-table { width: 100%; border-collapse: collapse; font-size: .875rem; margin-top: .75rem; }
+.admin-table th { text-align: left; padding: .5rem .75rem; border-bottom: 2px solid var(--border);
+                  font-weight: 600; color: var(--muted); font-size: .8rem; text-transform: uppercase; }
+.admin-table td { padding: .55rem .75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table tr.row-disabled td { opacity: .55; }
+.admin-actions { display: flex; gap: .4rem; justify-content: flex-end; }
+.admin-sub { font-size: .78rem; color: var(--muted); }
+.admin-hint { font-size: .875rem; color: var(--muted); margin-bottom: 1rem; }
+
+/* ── Script editor ── */
+.editor-form { display: flex; flex-direction: column; gap: 1.25rem; max-width: 900px; }
+.code-editor {
+  width: 100%; padding: .6rem .75rem; border: 1px solid var(--border);
+  border-radius: var(--radius); font-family: monospace; font-size: .85rem;
+  background: #0f172a; color: #e2e8f0; resize: vertical; line-height: 1.55;
+}
+.code-editor:focus { outline: none; border-color: var(--accent);
+                     box-shadow: 0 0 0 2px rgba(37,99,235,.15); }
+
+/* ── Audit log ── */
+.filter-bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+              margin-bottom: 1rem; }
+.filter-bar select, .filter-bar input[type="text"] {
+  padding: .35rem .6rem; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: .875rem; font-family: inherit; background: var(--surface);
+}
+.audit-details { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                 font-family: monospace; font-size: .75rem; }
+.audit-table td { vertical-align: top; }
+.nowrap { white-space: nowrap; }
+.pagination { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
 
 /* ── Login page ── */
 .login-body { display: flex; align-items: center; justify-content: center;

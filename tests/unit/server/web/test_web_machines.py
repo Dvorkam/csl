@@ -186,7 +186,8 @@ def test_machine_detail_404_for_unknown_machine(client: TestClient, admin_user: 
 def test_machine_detail_shows_script_name(
     client: TestClient, admin_user: User, machine: Machine, script: Script
 ) -> None:
-    resp = client.get(f"/machines/{machine.id}", cookies=_auth(admin_user))
+    # show_all=true needed: script has no ScriptTargetState row, so default view hides it
+    resp = client.get(f"/machines/{machine.id}?show_all=true", cookies=_auth(admin_user))
     assert b"hello" in resp.content
 
 
@@ -486,6 +487,271 @@ def test_restage_404_for_unknown_script(
     )
     assert resp.status_code == 200
     assert b"absent" in resp.content
+
+
+# ---------------------------------------------------------------------------
+# Job history list (8.13)
+# ---------------------------------------------------------------------------
+
+
+def test_jobs_list_200_for_admin(
+    client: TestClient, admin_user: User, machine: Machine, script: Script, db_session: AsyncSession
+) -> None:
+    import asyncio
+
+    asyncio.get_event_loop().run_until_complete(
+        _seed_completed_job(db_session, machine, script, admin_user)
+    )
+    resp = client.get("/jobs", cookies=_auth(admin_user))
+    assert resp.status_code == 200
+    assert b"Job History" in resp.content
+
+
+def test_jobs_list_shows_job_uuid(
+    client: TestClient, admin_user: User, machine: Machine, script: Script, db_session: AsyncSession
+) -> None:
+    import asyncio
+
+    asyncio.get_event_loop().run_until_complete(
+        _seed_completed_job(db_session, machine, script, admin_user)
+    )
+    resp = client.get("/jobs", cookies=_auth(admin_user))
+    assert b"aabbccdd" in resp.content
+
+
+def test_jobs_list_filter_by_status(
+    client: TestClient, admin_user: User, machine: Machine, script: Script, db_session: AsyncSession
+) -> None:
+    import asyncio
+
+    asyncio.get_event_loop().run_until_complete(
+        _seed_completed_job(db_session, machine, script, admin_user)
+    )
+    resp = client.get("/jobs?status=running", cookies=_auth(admin_user))
+    assert resp.status_code == 200
+    assert b"aabbccdd" not in resp.content  # completed job should not appear
+
+
+def test_jobs_list_hides_inaccessible_machines(
+    client: TestClient,
+    regular_user: User,
+    machine: Machine,
+    script: Script,
+    db_session: AsyncSession,
+) -> None:
+    import asyncio
+
+    asyncio.get_event_loop().run_until_complete(
+        _seed_completed_job(db_session, machine, script, regular_user)
+    )
+    # regular_user has no UserMachine bookmark → job on that machine is hidden
+    resp = client.get("/jobs", cookies=_auth(regular_user))
+    assert resp.status_code == 200
+    assert b"aabbccdd" not in resp.content
+
+
+def test_jobs_list_redirect_when_unauthenticated(client: TestClient) -> None:
+    resp = client.get("/jobs")
+    assert resp.status_code == 302
+
+
+async def _seed_completed_job(
+    db_session: AsyncSession, machine: Machine, script: Script, user: User
+) -> None:
+    job = Job(
+        job_uuid="aabbccdd-2222-2222-2222-000000000001",
+        machine_id=machine.id,
+        script_id=script.id,
+        user_id=user.id,
+        params_json="{}",
+        status="completed",
+        persistent=False,
+        started_at=datetime.utcnow(),
+        ended_at=datetime.utcnow(),
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Batch sync-states endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_sync_states_returns_oob_html(
+    client: TestClient,
+    admin_user: User,
+    machine: Machine,
+    script: Script,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    import control_station_lite.server.web.machines as machines_mod
+    from control_station_lite.shared.models import ApprovalState, ScriptDescriptor
+
+    async def _seed() -> None:
+        db_session.add(
+            ScriptTargetState(
+                machine_id=machine.id,
+                script_id=script.id,
+                state="pending",
+                approved_md5=None,
+                pending_md5="abc123",
+                last_refreshed_at=datetime.utcnow(),
+            )
+        )
+        await db_session.commit()
+
+    asyncio.get_event_loop().run_until_complete(_seed())
+
+    monkeypatch.setattr(machines_mod, "decrypt", lambda *_: b"fake-key")
+    monkeypatch.setattr(machines_mod, "get_ssh_pool", lambda: None)
+
+    class _MockClient:
+        def __init__(self, *a: object, **kw: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "_MockClient":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            pass
+
+        async def ensure_agent_running(self) -> None:
+            pass
+
+        async def get_script_state(self, name: str) -> ScriptDescriptor:
+            return ScriptDescriptor(
+                name=name,
+                state=ApprovalState.approved,
+                approved_md5="abc123",
+                pending_md5=None,
+            )
+
+    monkeypatch.setattr(machines_mod, "AgentClient", _MockClient)
+
+    resp = client.get(f"/machines/{machine.id}/sync-states", cookies=_auth(admin_user))
+    assert resp.status_code == 200
+    assert b"hx-swap-oob" in resp.content
+    assert b"approved" in resp.content
+
+
+def test_sync_states_returns_empty_for_no_staged_scripts(
+    client: TestClient, admin_user: User, machine: Machine, script: Script
+) -> None:
+    resp = client.get(f"/machines/{machine.id}/sync-states", cookies=_auth(admin_user))
+    assert resp.status_code == 200
+    assert resp.content == b""
+
+
+def test_sync_states_returns_cached_on_agent_failure(
+    client: TestClient,
+    admin_user: User,
+    machine: Machine,
+    script: Script,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    import control_station_lite.server.web.machines as machines_mod
+
+    async def _seed() -> None:
+        db_session.add(
+            ScriptTargetState(
+                machine_id=machine.id,
+                script_id=script.id,
+                state="pending",
+                approved_md5=None,
+                pending_md5="abc123",
+                last_refreshed_at=datetime.utcnow(),
+            )
+        )
+        await db_session.commit()
+
+    asyncio.get_event_loop().run_until_complete(_seed())
+
+    monkeypatch.setattr(machines_mod, "decrypt", lambda *_: b"fake-key")
+    monkeypatch.setattr(machines_mod, "get_ssh_pool", lambda: None)
+
+    class _FailClient:
+        def __init__(self, *a: object, **kw: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "_FailClient":
+            raise ConnectionError("SSH failed")
+
+        async def __aexit__(self, *_: object) -> None:
+            pass
+
+    monkeypatch.setattr(machines_mod, "AgentClient", _FailClient)
+
+    resp = client.get(f"/machines/{machine.id}/sync-states", cookies=_auth(admin_user))
+    assert resp.status_code == 200
+    assert b"hx-swap-oob" in resp.content
+    assert b"cached" in resp.content
+
+
+def test_sync_states_detects_approved_stale(
+    client: TestClient,
+    admin_user: User,
+    machine: Machine,
+    script: Script,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    import control_station_lite.server.web.machines as machines_mod
+    from control_station_lite.shared.models import ApprovalState, ScriptDescriptor
+
+    async def _seed() -> None:
+        db_session.add(
+            ScriptTargetState(
+                machine_id=machine.id,
+                script_id=script.id,
+                state="approved",
+                approved_md5="old-md5",
+                pending_md5=None,
+                last_refreshed_at=datetime.utcnow(),
+            )
+        )
+        await db_session.commit()
+
+    asyncio.get_event_loop().run_until_complete(_seed())
+
+    monkeypatch.setattr(machines_mod, "decrypt", lambda *_: b"fake-key")
+    monkeypatch.setattr(machines_mod, "get_ssh_pool", lambda: None)
+
+    class _MockClient:
+        def __init__(self, *a: object, **kw: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "_MockClient":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            pass
+
+        async def ensure_agent_running(self) -> None:
+            pass
+
+        async def get_script_state(self, name: str) -> ScriptDescriptor:
+            return ScriptDescriptor(
+                name=name,
+                state=ApprovalState.approved,
+                approved_md5="old-md5",
+                pending_md5=None,
+            )
+
+    monkeypatch.setattr(machines_mod, "AgentClient", _MockClient)
+
+    # script.md5 is "abc123" (from fixture), agent returns "old-md5" → stale
+    resp = client.get(f"/machines/{machine.id}/sync-states", cookies=_auth(admin_user))
+    assert resp.status_code == 200
+    assert b"approved_stale" in resp.content
 
 
 # ---------------------------------------------------------------------------

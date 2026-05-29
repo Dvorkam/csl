@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Machines — Admin — Control Station{% endblock %}
+
+{% block content %}
+<div class="page-header-row">
+  <h1>Machine Management</h1>
+</div>
+<p class="admin-hint">Register new machines via <code>POST /api/machines</code> with a registration bundle from <code>csl-agent init</code>.</p>
+
+{% if not machines %}
+<div class="empty-state"><p>No machines registered yet.</p></div>
+{% else %}
+<table class="admin-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Host</th>
+      <th>Platform</th>
+      <th>Agent port</th>
+      <th>MAC</th>
+      <th>Registered</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in machines %}
+    <tr>
+      <td><a href="/machines/{{ m.id }}"><strong>{{ m.name }}</strong></a></td>
+      <td class="admin-sub">{{ m.ssh_user }}@{{ m.ssh_host }}:{{ m.ssh_port }}</td>
+      <td>{{ m.platform }}</td>
+      <td class="admin-sub">{{ m.agent_port }}</td>
+      <td class="admin-sub">{{ m.mac_address or "—" }}</td>
+      <td class="admin-sub">{{ m.created_at.strftime("%Y-%m-%d") }}</td>
+      <td class="admin-actions">
+        <form method="post" action="/admin/machines/{{ m.id }}/delete"
+              onsubmit="return confirm('Delete machine {{ m.name }}? This removes all bookmarks.')">
+          <button class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

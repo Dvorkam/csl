@@ -1,14 +1,38 @@
 <span class="approval-badge approval-{{ state }}"
       title="approved MD5: {{ approved_md5 or '—' }}&#10;pending MD5: {{ pending_md5 or '—' }}">{{ state }}</span>
+{% if agent_unreachable is defined and agent_unreachable %}
+<span class="approval-action-note" title="Could not reach agent; showing cached state">&#9888; cached</span>
+{% endif %}
 <button class="btn btn-sm btn-ghost btn-refresh"
         hx-get="/machines/{{ machine_id }}/scripts/{{ script_name }}/state-badge"
         hx-target="#state-{{ script_id }}"
         hx-swap="innerHTML"
         title="Refresh state from agent">&#8635;</button>
-{% if state in ('pending', 'update_pending') %}
+{% if state == 'approved' %}
+<a class="btn btn-sm btn-primary"
+   href="/machines/{{ machine_id }}/scripts/{{ script_name }}/run">Run</a>
+{% elif state == 'approved_stale' %}
+<button class="btn btn-sm btn-secondary btn-warn"
+        hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
+        hx-target="#state-{{ script_id }}"
+        hx-swap="innerHTML"
+        title="Script content changed since approval — re-stage to request re-approval from target owner">Re-stage for approval</button>
+<span class="approval-action-note">Content changed since last approval</span>
+{% elif state == 'absent' %}
 <button class="btn btn-sm btn-secondary"
         hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
         hx-target="#state-{{ script_id }}"
         hx-swap="innerHTML"
-        hx-indicator="#state-{{ script_id }}">Re-stage</button>
+        title="Stage this script on the agent for target-owner approval">Stage</button>
+{% elif state in ('pending', 'update_pending') %}
+{% if script_md5 is defined and pending_md5 and script_md5 != pending_md5 %}
+<button class="btn btn-sm btn-secondary"
+        hx-post="/machines/{{ machine_id }}/scripts/{{ script_name }}/restage"
+        hx-target="#state-{{ script_id }}"
+        hx-swap="innerHTML"
+        title="Script was edited since last stage — push the latest version">Re-stage latest</button>
+{% endif %}
+<span class="approval-action-note">Awaiting approval on target</span>
+{% elif state == 'rejected' %}
+<span class="approval-action-note">Run <code>csl-agent approvals clear {{ script_name }}</code> on target to reset</span>
 {% endif %}
