@@ -146,7 +146,7 @@ The agent is testable in isolation (no control station needed). Build it first t
 - [x] **8.10** Admin: machine management page.
 - [x] **8.11** Admin: user management page.
 - [x] **8.12** Admin: audit log viewer with filters.
-- [ ] **8.13** Job history page: list of past job runs (filterable by machine/script/status), each row links to the existing job detail/log viewer.
+- [x] **8.13** Job history page: list of past job runs (filterable by machine/script/status), each row links to the existing job detail/log viewer.
 
 ---
 

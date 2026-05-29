@@ -12,6 +12,7 @@
     <div class="navbar-links">
       {% if user is defined and user %}
         <span class="navbar-user">{{ user.username }}{% if user.role == "admin" %} <span class="badge badge-admin">admin</span>{% endif %}</span>
+          <a href="/jobs">Jobs</a>
         {% if user.role == "admin" %}
           <a href="/admin/scripts">Scripts</a>
           <a href="/admin/machines">Machines</a>

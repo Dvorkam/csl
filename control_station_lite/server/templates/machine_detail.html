@@ -58,6 +58,12 @@
     </div>
   </div>
 
+  {# Single on-load trigger: opens one SSH tunnel and refreshes all badge divs via OOB swap #}
+  <div id="sync-trigger"
+       hx-get="/machines/{{ machine.id }}/sync-states"
+       hx-trigger="load"
+       hx-swap="none"></div>
+
   {% if script_states %}
   <table class="script-table">
     <thead>
@@ -80,11 +86,8 @@
         {% endif %}
       </td>
       <td>
-        <div id="state-{{ ss.script.id }}"
-             hx-get="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/state-badge"
-             hx-trigger="load"
-             hx-swap="innerHTML">
-          {# Initial render from DB cache; HTMX will replace on load with live agent state #}
+        {# Initial render from DB cache; sync-trigger above replaces with live agent state on load #}
+        <div id="state-{{ ss.script.id }}">
           <span class="approval-badge approval-{{ ss.state }}"
                 title="approved MD5: {{ ss.approved_md5 or '—' }}&#10;pending MD5: {{ ss.pending_md5 or '—' }}">{{ ss.state }}</span>
           <button class="btn btn-sm btn-ghost btn-refresh"
@@ -92,9 +95,16 @@
                   hx-target="#state-{{ ss.script.id }}"
                   hx-swap="innerHTML"
                   title="Refresh state from agent">&#8635;</button>
-          {% if ss.state == 'approved' or ss.state == 'approved_stale' %}
-          <a class="btn btn-sm btn-primary{% if ss.state == 'approved_stale' %} btn-warn{% endif %}"
+          {% if ss.state == 'approved' %}
+          <a class="btn btn-sm btn-primary"
              href="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/run">Run</a>
+          {% elif ss.state == 'approved_stale' %}
+          <button class="btn btn-sm btn-secondary btn-warn"
+                  hx-post="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/restage"
+                  hx-target="#state-{{ ss.script.id }}"
+                  hx-swap="innerHTML"
+                  title="Script content changed since approval — re-stage to request re-approval from target owner">Re-stage for approval</button>
+          <span class="approval-action-note">Content changed since last approval</span>
           {% elif ss.state == 'absent' %}
           <button class="btn btn-sm btn-secondary"
                   hx-post="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/restage"
@@ -102,10 +112,13 @@
                   hx-swap="innerHTML"
                   title="Stage this script on the agent for target-owner approval">Stage</button>
           {% elif ss.state in ('pending', 'update_pending') %}
+          {% if ss.pending_md5 and ss.script.md5 != ss.pending_md5 %}
           <button class="btn btn-sm btn-secondary"
                   hx-post="/machines/{{ machine.id }}/scripts/{{ ss.script.name }}/restage"
                   hx-target="#state-{{ ss.script.id }}"
-                  hx-swap="innerHTML">Re-stage</button>
+                  hx-swap="innerHTML"
+                  title="Script was edited since last stage — push the latest version">Re-stage latest</button>
+          {% endif %}
           <span class="approval-action-note">Awaiting approval on target</span>
           {% elif ss.state == 'rejected' %}
           <span class="approval-action-note">Run <code>csl-agent approvals clear {{ ss.script.name }}</code> on target to reset</span>
