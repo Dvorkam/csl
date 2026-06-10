@@ -30,6 +30,7 @@ from control_station_lite.server.db.models import Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
 from control_station_lite.shared.models import AgentHealth
 from control_station_lite.shared.registration import RegistrationBundle
+from control_station_lite.shared.ssh_commands import CONFIG_READ_CMD
 
 router = APIRouter(prefix="/api/machines", tags=["machines"])
 
@@ -79,12 +80,12 @@ class AgentStatusOut(BaseModel):
 
 
 def _remote_config_cmd(platform: str) -> str:
-    """SSH exec command that prints the agent config.yaml on the remote machine."""
-    if platform == "windows":
-        return (
-            r'powershell -Command "Get-Content (Join-Path $env:USERPROFILE \".csl\config.yaml\")"'
-        )
-    return "cat ~/.csl/config.yaml"
+    """SSH exec command that prints the agent config.yaml on the remote machine.
+
+    Must exactly match an allowlisted command in ``shared.ssh_commands`` so the
+    target's ssh-gateway permits it.
+    """
+    return CONFIG_READ_CMD.get(platform, CONFIG_READ_CMD["linux"])
 
 
 async def _ssh_connection_test(

@@ -18,6 +18,7 @@ import base64
 import getpass
 import hashlib
 import logging
+import shutil
 import socket
 import sys
 from pathlib import Path
@@ -33,6 +34,7 @@ from .cmd_setup import ReadinessIssue, _print_issues, _windows_is_admin, check_r
 __all__ = [
     "_WINDOWS_ADMIN_AK_PATH",
     "_append_authorized_keys",
+    "_build_authorized_keys_entry",
     "_generate_keypair",
     "_platform_name",
     "_set_admin_ak_acl",
@@ -42,6 +44,9 @@ __all__ = [
     "_write_config",
     "cmd_init",
 ]
+
+# Default agent port; mirrors the argparse default in cli/_main.py.
+_DEFAULT_AGENT_PORT = 36717
 
 logger = logging.getLogger(__name__)
 
@@ -129,15 +134,46 @@ def _set_admin_ak_acl(path: Path) -> None:
     )
 
 
+def _forced_command() -> str:
+    """Return the forced command embedded in the control station's key entry.
+
+    Resolves the absolute path to the ``csl-agent`` console script so the
+    forced command works even when ``~/.local/bin`` is not on PATH in sshd's
+    non-interactive environment. Falls back to the bare name if unresolved.
+    """
+    exe = shutil.which("csl-agent") or "csl-agent"
+    return f"{exe} ssh-gateway"
+
+
+def _build_authorized_keys_entry(public_openssh: bytes, agent_port: int) -> str:
+    """Build the restricted ``authorized_keys`` line for the control station key.
+
+    The key is pinned to a forced command (the ssh-gateway) and stripped of all
+    capabilities except local port forwarding to the agent's loopback port.
+    """
+    pub_line = public_openssh.decode().strip()
+    options = (
+        f'command="{_forced_command()}",restrict,port-forwarding,'
+        f'permitopen="127.0.0.1:{agent_port}"'
+    )
+    return f"{options} {pub_line}"
+
+
 def _append_authorized_keys(
     public_openssh: bytes,
     windows_admin_ak_path: Path | None = None,
+    *,
+    agent_port: int = _DEFAULT_AGENT_PORT,
 ) -> None:
-    """Append *public_openssh* to the appropriate ``authorized_keys`` (idempotent).
+    """Write the restricted control-station key entry to ``authorized_keys``.
 
     Writes to ``C:\\ProgramData\\ssh\\administrators_authorized_keys`` (or the
     config override) when running as a Windows Administrator; otherwise to
     ``~/.ssh/authorized_keys``.
+
+    Idempotent and upgrade-safe: any prior entry for this key — whether a bare
+    key from an older ``init`` or a previous restricted entry — is replaced in
+    place, never duplicated. Unrelated keys in the file are preserved.
     """
     use_admin_path = IS_WINDOWS and _windows_is_admin()
 
@@ -153,25 +189,27 @@ def _append_authorized_keys(
             ssh_dir.chmod(0o700)
         ak_path = ssh_dir / "authorized_keys"
 
-    pub_line = public_openssh.decode().strip()
-    if ak_path.exists():
-        existing = ak_path.read_text(encoding="utf-8")
-        if pub_line in existing:
-            logger.info("public key already in %s — skipping", ak_path.name)
-            return
-        with open(ak_path, "a", encoding="utf-8") as fh:
-            if existing and not existing.endswith("\n"):
-                fh.write("\n")
-            fh.write(f"{pub_line}\n")
-    else:
-        ak_path.write_text(f"{pub_line}\n", encoding="utf-8")
-        if not use_admin_path and sys.platform != "win32":
-            ak_path.chmod(0o600)
+    entry = _build_authorized_keys_entry(public_openssh, agent_port)
+    # The base64 blob uniquely identifies our key regardless of options/comment.
+    key_body = public_openssh.decode().split()[1]
+
+    is_new_file = not ak_path.exists()
+    existing_lines = ak_path.read_text(encoding="utf-8").splitlines() if not is_new_file else []
+    kept = [line for line in existing_lines if key_body not in line]
+    upgraded = len(kept) != len(existing_lines)
+    kept.append(entry)
+
+    ak_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    if is_new_file and not use_admin_path and sys.platform != "win32":
+        ak_path.chmod(0o600)
 
     if use_admin_path:
         _set_admin_ak_acl(ak_path)
 
-    logger.info("public key written to %s", ak_path)
+    if upgraded:
+        logger.info("upgraded control-station key entry in %s", ak_path.name)
+    else:
+        logger.info("control-station key written to %s", ak_path)
 
 
 # ---------------------------------------------------------------------------
@@ -279,10 +317,11 @@ def cmd_init(args: argparse.Namespace) -> None:
     # 2 — SSH keypair
     private_pem, fingerprint, public_openssh = _generate_keypair(keys_dir)
 
-    # 3 — authorized_keys
+    # 3 — authorized_keys (restricted to the ssh-gateway forced command)
     _append_authorized_keys(
         public_openssh,
         windows_admin_ak_path=cfg.advanced.windows_admin_authorized_keys_path,
+        agent_port=port,
     )
 
     # 4 — config.yaml

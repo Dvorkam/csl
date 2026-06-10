@@ -26,16 +26,9 @@ from control_station_lite.shared.models import (
     StageScriptRequest,
     StageScriptResponse,
 )
+from control_station_lite.shared.ssh_commands import WAKEUP_CMD
 
 logger = logging.getLogger(__name__)
-
-# Platform-appropriate one-shot service-start commands. Each exits immediately
-# after signalling the OS to start the agent; the OS owns the process.
-_WAKEUP_CMD: dict[str, str] = {
-    "linux": "systemctl --user start csl-agent",
-    "windows": 'schtasks /run /tn "CSL-Agent"',
-    "macos": 'launchctl kickstart "gui/$UID/com.controlstationlite.agent"',
-}
 
 # Delays between /healthz retries after the start command is issued (~5 s total).
 _WAKEUP_BACKOFF = (0.5, 1.0, 1.5, 2.0)
@@ -129,7 +122,7 @@ class AgentClient:
         if await self._is_healthy():
             return
 
-        cmd = _WAKEUP_CMD.get(self._machine.platform)
+        cmd = WAKEUP_CMD.get(self._machine.platform)
         if cmd is None:
             raise AgentClientError(f"No start command for platform {self._machine.platform!r}")
 

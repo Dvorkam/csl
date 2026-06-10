@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 9 / Phase 10** — Audit log API + packaging (see TASKS.md).
+**Phase 8.5** — Security hardening (see TASKS.md). Next: **8.5.2** SSH host-key pinning.
 
 ## Up next
 
-**Phase 9.1–9.3** — `server/api/audit.py` with admin-only read access, audit decorator, coverage verification.
+**8.5.2–8.5.7** — host-key pinning, agent API token, MD5-pinned execution, agent-side param validation, cookie secure flag, ARCHITECTURE corrections. Then **Phase 9** (audit log + observability).
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 8.5.1 | Forced-command SSH key. New `shared/ssh_commands.py` centralises the allowlist (service-start + config-read per platform); `csl-agent ssh-gateway` subcommand runs only exact-match allowlisted commands from `$SSH_ORIGINAL_COMMAND`, refuses everything else incl. empty/appended commands (exit 126). `init` now writes a `command="...",restrict,port-forwarding,permitopen="127.0.0.1:<port>"` entry and upgrades old bare-key entries in place (preserving unrelated keys). `agent_client.py` and `machines.py` import the shared constants instead of local copies. 20 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.13 | Job history page. `GET /jobs` web route with machine/script/status filters and pagination (50/page). Duration column (live ticker for running jobs). "Jobs" link added to navbar for all authenticated users. Access-controlled: non-admin users only see jobs for their bookmarked machines. 5 unit tests. README rewritten to reflect current state. | branch `feature/phase-8-admin-pages` |
 | 8.7 (fixes) | `approved_stale` now shows "Re-stage for approval" button instead of Run. Page-load batch sync (`GET /machines/{id}/sync-states`) opens ONE SSH tunnel + calls `ensure_agent_running()` before refreshing all badge divs via HTMX OOB swap. Re-stage button in `pending`/`update_pending` only appears when `pending_md5 != script.md5`. | branch `feature/phase-8-admin-pages` |
 | 8.8–8.12 | Admin pages. `server/web/admin.py`: script library list, script editor (create/edit/delete), machine management list + delete, user list + enable/disable + role change, audit log viewer with action/target_type/username filters and pagination. 5 Jinja2 templates under `templates/admin/`. CSS extended with admin-table, code-editor, filter-bar, pagination, audit-details. 33 unit tests covering auth gates, CRUD flows, guard rails (cannot disable/demote self). | branch `feature/phase-8-admin-pages` |

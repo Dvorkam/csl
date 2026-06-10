@@ -150,23 +150,43 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 ---
 
-## Phase 9 — Audit log
+## Phase 8.5 — Security hardening
 
-- [ ] **9.1** Implement `server/api/audit.py` with admin-only read access.
-- [ ] **9.2** Audit decorator / helper used by all state-mutating endpoints. Capture: user, action, target, result, structured details.
-- [ ] **9.3** Verify coverage: every `POST`, `PUT`, `DELETE`, every login/logout, every job submit/kill produces an entry.
+Closes the gaps found in the 2026-06-10 architecture-vs-implementation review: the implementation must actually deliver the §7 security model, and ARCHITECTURE must be corrected where it over-claims. Do this phase before Phase 10 packaging — `setup.sh` and the Phase 12 docs must not ship describing properties the system doesn't have.
+
+- [x] **8.5.1** Forced-command SSH key restriction. `csl-agent init` writes the `authorized_keys` entry as `command="csl-agent ssh-gateway",restrict,port-forwarding,permitopen="127.0.0.1:<agent_port>" <key>`. New `csl-agent ssh-gateway` subcommand: inspect `SSH_ORIGINAL_COMMAND`, execute only exact-match allowlisted commands (the platform service-start command and the config.yaml read), exit non-zero for anything else. Centralise the allowlisted command strings in `shared/` constants used by both the gateway and `agent_client.py` so they cannot drift. Re-running `init` must replace an existing unrestricted entry (idempotency now means "upgrade old format"). Verify the options work under Win32-OpenSSH in the Windows tests.
+- [ ] **8.5.2** SSH host-key pinning. At registration (`POST /api/machines`), connect TOFU-style, capture the server host key, store it on the machine record (new column + Alembic migration), and return its fingerprint so the admin can confirm out-of-band. All subsequent connections validate against the pinned key and fail closed with a clear error on mismatch. `known_hosts=None` survives only in the one registration-time connection.
+- [ ] **8.5.3** Agent API bearer-token auth. `csl-agent init` generates a token (`secrets.token_urlsafe(32)`), stores it in `config.yaml`, and includes it in the registration bundle (format change — existing bundles/registrations require re-init; acceptable pre-1.0). Control station stores it encrypted like the SSH key and sends `Authorization: Bearer` on every agent request. Agent middleware enforces it on **all** endpoints incl. `/healthz` (constant-time compare, 401 otherwise).
+- [ ] **8.5.4** MD5-pinned job execution. Add `expected_md5` to `JobRequest`; control station fills it from the canonical script. Agent rejects the job with a structured error when it differs from `approved_md5` (control station reacts by re-syncing, same UX as `pending_approval`). Additionally, `script_runner` and `process_manager` hash the on-disk file before exec and refuse (+ audit entry) when it doesn't match `approved_md5` — §7.4's "approval is bound to a specific MD5" must hold at run time, not only at stage time.
+- [ ] **8.5.5** Agent-side parameter validation. Before exec, validate `params` against the approved script's `.meta.yaml` (reuse `shared/script_meta.py`): reject unknown params, missing required params, type/min/max/choices violations. A script with no meta file accepts no params. Structured validation error surfaced in the UI. (Makes §3.2 step 7 true.)
+- [ ] **8.5.6** Cookie `secure` flag config-driven: new setting (`CSL_COOKIE_SECURE`, default `true`); both `web/auth.py` and `api/auth.py` honour it; dev `.env` sets `false` for plain-HTTP localhost. Tests keep using `base_url="https://testserver"`.
+- [ ] **8.5.7** Update ARCHITECTURE.md to match: §3.1/§6.2 (restricted key entry is standard, bundle carries the API token), §3.2 (job request carries `expected_md5`), §5.1 (new machine columns), §7.1 (bcrypt direct, passlib dropped — also fix the §9.1 pyproject excerpt), §7.3 (host-key pinning), §7.4/§7.6 (the "no general shell execution path" claim is now backed by the forced command; describe the gateway).
+
+---
+
+## Phase 9 — Audit log and observability
+
+- [ ] **9.1** Implement `server/api/audit.py` with admin-only read access. This is the JSON API counterpart of the admin web viewer from 8.12 — flesh out the empty router stub already wired into `main.py`, reusing the viewer's filter semantics (action, target_type, username, pagination).
+- [ ] **9.2** Audit decorator / helper used by all state-mutating endpoints. Capture: user, action, target, result, structured details. (Currently only `builtin.py` writes `AuditLog` entries — auth, machines, scripts, and jobs write nothing; instrumenting them is the bulk of this phase.)
+- [ ] **9.3** Verify coverage with a guard test: walk the FastAPI route table and assert every mutating route (`POST`/`PUT`/`DELETE`, login/logout, job submit/kill) is audit-instrumented — same spirit as the `_EXPECTED_ENDPOINTS` guard. Exempt routes (e.g. `/api/auth/refresh`) go on an explicit allowlist in the test.
+- [ ] **9.4** Structured JSON logging on the server per §10: one JSON object per line to stdout. Agent keeps its current plain logging unless sharing the formatter is trivial.
+- [ ] **9.5** Correlation IDs per §10: middleware assigns a request ID, includes it in log records, and propagates it to agent calls via a header so one user action can be traced end-to-end.
+- [ ] **9.6** Stable error codes per §10: exceptions surfaced as structured error responses with a stable `code` field. Define a small initial catalogue (auth, approval, agent-unreachable, validation).
 
 ---
 
 ## Phase 10 — Packaging and distribution
 
-- [ ] **10.1** `deploy/Dockerfile` for the control station.
+- [ ] **10.1** `deploy/Dockerfile` for the control station. A basic single-stage file already exists; rework it per §9.2 — prod stage with the package baked in, plus a dev stage for the editable-install workflow.
 - [ ] **10.2** `deploy/nginx.conf` template with TLS config, rate limiting on `/api/auth/*`, sane request size limits.
-- [ ] **10.3** `deploy/docker-compose.yml` wiring app + nginx, with documented volumes.
-- [ ] **10.4** `deploy/control-station.service` systemd unit.
-- [ ] **10.5** `scripts/setup.sh` bootstrap per §9.4. Idempotent: rerun must not destroy data.
-- [ ] **10.6** Build and publish PyPI release pipeline. Verify `pip install control-station-lite[agent]` works in a clean container on Linux and Windows.
-- [ ] **10.7** End-to-end smoke test from a clean NAS: run `setup.sh`, register one Linux target, one Windows target, run scripts on each.
+- [ ] **10.3** `deploy/docker-compose.yml` wiring app + nginx, with documented volumes. nginx is the only edge: the app port must not be published directly (the current compose file publishes `8080` — fix that here). Add `deploy/docker-compose.override.yml` bind-mounting the source for dev (§9.2).
+- [ ] **10.4** Run migrations on deploy: container entrypoint runs `alembic upgrade head` before starting uvicorn. Idempotent on every start.
+- [ ] **10.5** `deploy/control-station.service` systemd unit.
+- [ ] **10.6** `scripts/setup.sh` bootstrap per §9.4. Idempotent: rerun must not destroy data.
+- [ ] **10.7** Decide the release version scheme (pyproject stays at 0.1.0 until the first tag is cut — see project notes), then build the PyPI release pipeline. Verify `pip install control-station-lite[agent]` works in a clean container on Linux and Windows.
+- [ ] **10.8** Extend the release pipeline to build and push the prod Docker image, tagged to match the PyPI release (§9.2).
+- [ ] **10.9** Version-compatibility check per §11: include the agent version in the registration bundle (`shared/registration.py`); `POST /api/machines` refuses registration when the major version differs from the server's.
+- [ ] **10.10** End-to-end smoke test from a clean NAS: run `setup.sh`, register one Linux target, one Windows target, run scripts on each.
 
 ---
 
@@ -174,11 +194,12 @@ The agent is testable in isolation (no control station needed). Build it first t
 
 Ship as default scripts that target owners can opt into. Each is a `.sh` (Linux/macOS) and/or `.ps1` (Windows) plus `.meta.yaml`.
 
-- [ ] **11.1** `sleep_machine` — put target to sleep.
-- [ ] **11.2** `restart_machine` — restart target.
-- [ ] **11.3** `start_steam`.
-- [ ] **11.4** `start_llama_server` — persistent; parameters for model path, context size, GPU layers.
-- [ ] **11.5** Add SPDX license headers to all `.sh` and `.ps1` scripts. Extend the `insert-license` pre-commit hook with a second entry targeting `\.sh$` and `\.ps1$` (both use `#` comment style).
+- [ ] **11.1** Decide where built-in scripts live and how they reach the script library: ship them inside the package (e.g. `control_station_lite/server/builtin_scripts/`) and seed them into the `scripts` table via a CLI command invoked from `setup.sh`. Seeding is idempotent and must not overwrite admin edits to an existing script.
+- [ ] **11.2** `sleep_machine` — put target to sleep.
+- [ ] **11.3** `restart_machine` — restart target.
+- [ ] **11.4** `start_steam`.
+- [ ] **11.5** `start_llama_server` — persistent; parameters for model path, context size, GPU layers.
+- [ ] **11.6** Add SPDX license headers to all `.sh` and `.ps1` scripts. Extend the `insert-license` pre-commit hook with a second entry targeting `\.sh$` and `\.ps1$` (both use `#` comment style).
 
 (Wake-on-LAN is built-in, not a script — see Phase 7.)
 
@@ -204,6 +225,7 @@ These are explicitly deferred. They are listed here so we don't reinvent the dis
 - A proper SPA frontend.
 - Generic UDP/TCP packet sender.
 - Tailscale-native authentication integration.
+- Audit-log retention / pruning (table grows unbounded; revisit before 1.0).
 
 ---
 
