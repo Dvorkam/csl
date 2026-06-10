@@ -89,7 +89,7 @@ class ApprovalsManager:
         self._auto_approve = set(auto_approve_list or [])
         self._lock = threading.Lock()
         self._store = self._load()
-        self._mtime: float = self._current_mtime()
+        self._sig: tuple[int, int] = self._current_sig()
 
     # ------------------------------------------------------------------
     # Public read operations
@@ -300,21 +300,29 @@ class ApprovalsManager:
     # inconsistent with reality.  A future reconciliation pass on startup (analogous
     # to what state.py does for running.json) should detect and resolve such drift.
 
-    def _current_mtime(self) -> float:
+    def _current_sig(self) -> tuple[int, int]:
+        """Cheap change signature for approvals.json: ``(mtime_ns, size)``.
+
+        Comparing size alongside the modification time catches writes that land
+        within the same coarse mtime tick (common on some filesystems, e.g. a
+        rapid stage-then-approve), which a bare mtime check would miss — leaving
+        the in-memory store stale.
+        """
         try:
-            return self._paths.approvals_path.stat().st_mtime
+            st = self._paths.approvals_path.stat()
         except FileNotFoundError:
-            return 0.0
+            return (0, 0)
+        return (st.st_mtime_ns, st.st_size)
 
     def _sync_from_disk(self) -> None:
         """Reload store if approvals.json was modified by an external process (e.g. CLI).
 
         Must be called while holding self._lock.
         """
-        mtime = self._current_mtime()
-        if mtime != self._mtime:
+        sig = self._current_sig()
+        if sig != self._sig:
             self._store = self._load()
-            self._mtime = mtime
+            self._sig = sig
 
     def _load(self) -> _ApprovalsStore:
         if not self._paths.approvals_path.exists():
@@ -335,7 +343,7 @@ class ApprovalsManager:
             encoding="utf-8",
         )
         tmp.replace(self._paths.approvals_path)
-        self._mtime = self._current_mtime()
+        self._sig = self._current_sig()
 
     def _audit(self, action: str, name: str, **details: object) -> None:
         parts = " ".join(f"{k}={v}" for k, v in details.items())

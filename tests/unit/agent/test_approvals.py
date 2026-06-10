@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 
 import pytest
@@ -328,6 +329,28 @@ class TestPersistence:
         cli_mgr.approve("hello")
 
         # The server manager must now see the updated state without restarting
+        assert server_mgr.get_state("hello").state == ApprovalState.approved
+
+    def test_reload_detected_when_mtime_unchanged(self, paths: CslPaths) -> None:
+        """External change within the same mtime tick must still be picked up.
+
+        On filesystems with coarse mtime resolution a stage-then-approve can
+        leave the file's mtime unchanged; the size comparison in the change
+        signature is what catches it. Here we pin the mtime to a constant so a
+        bare-mtime check would miss the update and the store would stay stale.
+        """
+        server_mgr = ApprovalsManager(paths)
+        server_mgr.stage("hello", "content", "abc123")
+        assert server_mgr.get_state("hello").state == ApprovalState.pending
+
+        # Capture the file's exact mtime, then approve via a separate manager.
+        before = paths.approvals_path.stat()
+        ApprovalsManager(paths).approve("hello")
+
+        # Force the mtime back to its pre-approve value: a bare-mtime check now
+        # sees "no change", but the file size has grown.
+        os.utime(paths.approvals_path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
         assert server_mgr.get_state("hello").state == ApprovalState.approved
 
     def test_approvals_json_is_valid_json(self, mgr: ApprovalsManager, paths: CslPaths) -> None:
