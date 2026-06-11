@@ -34,6 +34,7 @@ from control_station_lite.agent.process_manager import (
     _pid_alive,
     _ReattachedProcess,
 )
+from control_station_lite.agent.script_runner import ScriptIntegrityError
 from control_station_lite.shared.models import JobStatus
 
 # ---------------------------------------------------------------------------
@@ -112,6 +113,15 @@ class TestApprovalEnforcement:
         md5_v2 = hashlib.md5(b"v2").hexdigest()
         approvals.stage("script", "v2", md5_v2)
         with pytest.raises(ScriptNotApprovedError, match="update_pending"):
+            manager.start("script", {}, _new_uuid())
+
+    def test_tampered_file_raises_integrity_error(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        _approve_script(approvals, paths, "script", "#!/bin/bash\nsleep 1\n")
+        # Tamper the approved file on disk, outside the approval flow.
+        (paths.scripts_dir / "script.sh").write_text("#!/bin/bash\nmalicious\n")
+        with pytest.raises(ScriptIntegrityError):
             manager.start("script", {}, _new_uuid())
 
 

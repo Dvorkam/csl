@@ -44,6 +44,19 @@ class AgentNotReachableError(AgentClientError):
     """Raised when the agent did not become healthy after the start command."""
 
 
+class AgentApprovalError(AgentClientError):
+    """Raised when the agent refuses a job for an approval/integrity reason (409).
+
+    Carries the agent's reported state so the caller can re-sync and surface the
+    same UX as a pending-approval response.
+    """
+
+    def __init__(self, agent_state: str, approval_error: str, detail: str) -> None:
+        super().__init__(detail)
+        self.agent_state = agent_state
+        self.approval_error = approval_error
+
+
 class AgentClient:
     """Typed HTTP client that talks to a csl-agent through an SSH tunnel.
 
@@ -196,6 +209,14 @@ class AgentClient:
     async def submit_job(self, request: JobRequest) -> JobStatusResponse:
         assert self._http is not None
         resp = await self._http.post("/jobs", json=request.model_dump())
+        if resp.status_code == 409:
+            detail = resp.json().get("detail")
+            if isinstance(detail, dict) and "approval_error" in detail:
+                raise AgentApprovalError(
+                    agent_state=detail.get("agent_state", ""),
+                    approval_error=detail["approval_error"],
+                    detail=detail.get("detail", "agent refused the job"),
+                )
         resp.raise_for_status()
         return JobStatusResponse.model_validate(resp.json())
 

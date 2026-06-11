@@ -30,6 +30,7 @@ from control_station_lite.agent.lifecycle import IdleTracker
 from control_station_lite.agent.log_stream import make_sse_response
 from control_station_lite.agent.process_manager import JobNotFoundError, ProcessManager
 from control_station_lite.agent.script_runner import (
+    ScriptIntegrityError,
     ScriptNotApprovedError,
     ScriptNotFoundError,
     run_script,
@@ -187,11 +188,34 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
     pm: ProcessManager = request.app.state.process_manager
     cfg: AgentConfig = request.app.state.config
 
+    if body.expected_md5 is not None:
+        descriptor = approvals.get_state(body.script_name)
+        if descriptor.approved_md5 != body.expected_md5:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "approval_error": "md5_mismatch",
+                    "agent_state": descriptor.state,
+                    "detail": (
+                        f"approved MD5 {descriptor.approved_md5} != expected {body.expected_md5}"
+                    ),
+                },
+            )
+
     if body.persistent:
         try:
             return pm.start(body.script_name, body.params, body.job_uuid)
         except ScriptNotApprovedError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ScriptIntegrityError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "approval_error": "integrity",
+                    "agent_state": "approved",
+                    "detail": str(exc),
+                },
+            ) from exc
         except ScriptNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -201,6 +225,11 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
         result = run_script(body.script_name, body.params, approvals, cfg.agent.scripts_dir)
     except ScriptNotApprovedError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ScriptIntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"approval_error": "integrity", "agent_state": "approved", "detail": str(exc)},
+        ) from exc
     except ScriptNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

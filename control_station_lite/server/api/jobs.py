@@ -26,7 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from control_station_lite.server.api.machines import _assert_access, _get_machine_or_404
 from control_station_lite.server.auth.dependencies import current_user
 from control_station_lite.server.config import get_settings
-from control_station_lite.server.core.agent_client import AgentClient, AgentClientError
+from control_station_lite.server.core.agent_client import (
+    AgentApprovalError,
+    AgentClient,
+    AgentClientError,
+)
 from control_station_lite.server.core.crypto import decrypt
 from control_station_lite.server.core.script_registry import (
     ScriptRegistryError,
@@ -162,9 +166,17 @@ async def submit_job(
             script_name=body.script_name,
             params=body.params,
             persistent=script.persistent,
+            expected_md5=script.md5,
         )
         try:
             agent_resp = await client.submit_job(request)
+        except AgentApprovalError:
+            # Agent's approved MD5 drifted from ours (or the on-disk file changed)
+            # between sync and submit. Re-sync to refresh the cache and surface
+            # the resolved state with the same UX as a pending-approval response.
+            resolved = await sync_script(machine, script, client, session)
+            await session.commit()
+            raise _approval_error_response(resolved, body.script_name) from None
         except AgentClientError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

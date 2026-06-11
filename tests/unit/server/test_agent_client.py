@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from control_station_lite.server.core.agent_client import (
+    AgentApprovalError,
     AgentClient,
     AgentClientError,
     AgentNotReachableError,
@@ -274,6 +275,17 @@ async def test_submit_job(client_ctx: AgentClient) -> None:
         result = await c.submit_job(req)
     assert isinstance(result, JobStatusResponse)
     assert result.status == JobStatus.running
+
+
+async def test_submit_job_409_raises_approval_error() -> None:
+    pool = _pool()
+    detail = {"approval_error": "md5_mismatch", "agent_state": "approved", "detail": "drift"}
+    http = _http({"POST /jobs": (409, {"detail": detail})})
+    async with AgentClient(_machine(), os.urandom(32), pool, _http_client=http) as c:
+        with pytest.raises(AgentApprovalError) as exc_info:
+            await c.submit_job(JobRequest(job_uuid="uuid-1", script_name="hello"))
+    assert exc_info.value.approval_error == "md5_mismatch"
+    assert exc_info.value.agent_state == "approved"
 
 
 async def test_kill_job(client_ctx: AgentClient) -> None:

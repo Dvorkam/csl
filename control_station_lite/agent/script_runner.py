@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import subprocess
@@ -22,16 +23,20 @@ from control_station_lite.shared.models import ApprovalState
 from control_station_lite.shared.platform_info import IS_WINDOWS
 
 __all__ = [
+    "ScriptIntegrityError",
     "ScriptNotApprovedError",
     "ScriptNotFoundError",
     "ScriptResult",
     "build_command",
     "build_env",
+    "file_md5",
     "find_script",
     "run_script",
+    "verify_script_integrity",
 ]
 
 logger = logging.getLogger(__name__)
+_audit = logging.getLogger("csl.agent.audit")
 
 # Platform-specific ordered candidate extensions.  The first match wins.
 _LINUX_EXTENSIONS = (".sh", ".bash", "")
@@ -44,6 +49,10 @@ class ScriptNotApprovedError(RuntimeError):
 
 class ScriptNotFoundError(FileNotFoundError):
     """Raised when no executable script file can be found for the given name."""
+
+
+class ScriptIntegrityError(RuntimeError):
+    """Raised when an on-disk script's MD5 does not match its approved MD5."""
 
 
 @dataclass
@@ -75,6 +84,7 @@ def run_script(
         )
 
     script_path = find_script(name, scripts_dir)
+    verify_script_integrity(name, script_path, descriptor.approved_md5)
     command = build_command(script_path)
     env = build_env(params)
 
@@ -106,6 +116,38 @@ def run_script(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def file_md5(path: Path) -> str:
+    """MD5 of a script file, newline-normalised to match the canonical MD5.
+
+    Reading with universal newlines collapses any CRLF written on Windows back
+    to ``\\n``, so the digest matches ``md5(content.encode())`` computed by the
+    control station from the canonical LF content.
+    """
+    return hashlib.md5(path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+
+
+def verify_script_integrity(name: str, script_path: Path, approved_md5: str | None) -> None:
+    """Refuse to run if the on-disk script no longer matches its approved MD5.
+
+    Approval is bound to a specific MD5 (ARCHITECTURE §7.4): this enforces that
+    binding at execution time, not only when the script was approved. A mismatch
+    means the approved file changed on disk outside the approval flow.
+    """
+    if approved_md5 is None:
+        return
+    actual = file_md5(script_path)
+    if actual != approved_md5:
+        _audit.warning(
+            "action=integrity_violation script=%s approved_md5=%s actual_md5=%s",
+            name,
+            approved_md5,
+            actual,
+        )
+        raise ScriptIntegrityError(
+            f"refusing to run '{name}': on-disk MD5 {actual} != approved {approved_md5}"
+        )
 
 
 def find_script(name: str, scripts_dir: Path) -> Path:

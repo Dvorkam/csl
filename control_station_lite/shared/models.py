@@ -45,6 +45,10 @@ class JobRequest(BaseModel):
     # Parameter values before env-var serialisation; bools/ints/floats preserved.
     params: dict[str, str | int | float | bool] = Field(default_factory=dict)
     persistent: bool = False
+    # MD5 the control station expects to be approved on the target. When set,
+    # the agent refuses the job if its approved MD5 differs (defends against a
+    # stale-approval desync). None for legacy callers / direct agent use.
+    expected_md5: str | None = None
 
 
 class JobStatusResponse(BaseModel):

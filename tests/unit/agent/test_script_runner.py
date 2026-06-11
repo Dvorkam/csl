@@ -18,13 +18,16 @@ import pytest
 from control_station_lite.agent.approvals import ApprovalsManager
 from control_station_lite.agent.paths import CslPaths
 from control_station_lite.agent.script_runner import (
+    ScriptIntegrityError,
     ScriptNotApprovedError,
     ScriptNotFoundError,
     ScriptResult,
     build_command,
     build_env,
+    file_md5,
     find_script,
     run_script,
+    verify_script_integrity,
 )
 
 # ---------------------------------------------------------------------------
@@ -96,6 +99,43 @@ class TestApprovalEnforcement:
         approvals.approve("s")
         (paths.scripts_dir / "s").unlink()
         with pytest.raises(ScriptNotFoundError):
+            run_script("s", {}, approvals, paths.scripts_dir)
+
+
+# ---------------------------------------------------------------------------
+# TestIntegrityCheck — on-disk MD5 must match approved MD5 (task 8.5.4)
+# ---------------------------------------------------------------------------
+
+
+class TestIntegrityCheck:
+    def test_file_md5_normalises_newlines(self, tmp_path: Path) -> None:
+        p = tmp_path / "s"
+        p.write_bytes(b"line1\r\nline2\n")
+        assert file_md5(p) == hashlib.md5(b"line1\nline2\n").hexdigest()
+
+    def test_verify_passes_on_match(self, tmp_path: Path) -> None:
+        p = tmp_path / "s"
+        p.write_text("echo hi\n")
+        verify_script_integrity("s", p, hashlib.md5(b"echo hi\n").hexdigest())  # no raise
+
+    def test_verify_skipped_when_approved_md5_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "s"
+        p.write_text("anything\n")
+        verify_script_integrity("s", p, None)  # no raise
+
+    def test_verify_raises_on_mismatch(self, tmp_path: Path) -> None:
+        p = tmp_path / "s"
+        p.write_text("tampered\n")
+        with pytest.raises(ScriptIntegrityError):
+            verify_script_integrity("s", p, "deadbeef")
+
+    def test_run_script_refuses_tampered_file(
+        self, approvals: ApprovalsManager, paths: CslPaths
+    ) -> None:
+        _approve_script(approvals, paths, "s", "echo hi\n", "")
+        # Tamper the approved file on disk, outside the approval flow.
+        (paths.scripts_dir / "s").write_text("malicious\n")
+        with pytest.raises(ScriptIntegrityError):
             run_script("s", {}, approvals, paths.scripts_dir)
 
 

@@ -136,6 +136,35 @@ class TestSubmitJobEndpoint:
         )
         assert resp.status_code == 403
 
+    def test_expected_md5_mismatch_returns_409(self, isolated_client: TestClient) -> None:
+        _stage_and_approve(isolated_client, "drifter", "#!/bin/bash\necho ok\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u2", "script_name": "drifter", "expected_md5": "deadbeef"},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["approval_error"] == "md5_mismatch"
+
+    def test_tampered_script_returns_409_integrity(self, isolated_client: TestClient) -> None:
+        _stage_and_approve(isolated_client, "tamper", "#!/bin/bash\necho ok\n")
+        paths = isolated_client.app.state.config.agent.to_csl_paths()
+        (paths.scripts_dir / "tamper").write_text("malicious\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u3", "script_name": "tamper"},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["approval_error"] == "integrity"
+
+    @pytest.mark.linux_only
+    def test_expected_md5_match_runs(self, isolated_client: TestClient) -> None:
+        md5 = _stage_and_approve(isolated_client, "matcher", "#!/bin/bash\necho ok\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u1", "script_name": "matcher", "expected_md5": md5},
+        )
+        assert resp.status_code == 202
+
     @pytest.mark.linux_only
     def test_non_persistent_job_writes_log_file(
         self, isolated_client: TestClient, tmp_path: Path
