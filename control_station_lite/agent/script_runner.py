@@ -199,13 +199,16 @@ def _check_bounds(descriptor: ParamDescriptor, value: float) -> list[str]:
 
 
 def file_md5(path: Path) -> str:
-    """MD5 of a script file, newline-normalised to match the canonical MD5.
+    """MD5 of a script file, computed byte-for-byte over the on-disk content.
 
-    Reading with universal newlines collapses any CRLF written on Windows back
-    to ``\\n``, so the digest matches ``md5(content.encode())`` computed by the
-    control station from the canonical LF content.
+    This must match ``md5(content.encode())`` as computed by the control station
+    (see ``server/core/script_registry._compute_md5``), which hashes the raw
+    canonical content with no newline translation. The agent therefore writes
+    script content byte-exact (``ApprovalsManager.stage`` uses ``newline=""``)
+    and hashes it byte-exact here, so the digests agree on every platform
+    regardless of LF/CRLF.
     """
-    return hashlib.md5(path.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    return hashlib.md5(path.read_bytes()).hexdigest()
 
 
 def verify_script_integrity(name: str, script_path: Path, approved_md5: str | None) -> None:

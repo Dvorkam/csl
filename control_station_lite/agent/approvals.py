@@ -147,9 +147,12 @@ class ApprovalsManager:
                     logger.debug("stage %s: already staged with same md5, no-op", name)
                     return current
 
-            # Write content to pending dir.
+            # Write content to pending dir. newline="" preserves the bytes
+            # exactly (no \n -> \r\n translation on Windows), so the on-disk
+            # MD5 matches the canonical md5(content.encode()) computed by the
+            # control station — see script_runner.file_md5.
             self._paths.pending_dir.mkdir(parents=True, exist_ok=True)
-            (self._paths.pending_dir / name).write_text(content, encoding="utf-8")
+            (self._paths.pending_dir / name).write_text(content, encoding="utf-8", newline="")
             if meta_yaml is not None:
                 (self._paths.pending_dir / f"{name}.meta.yaml").write_text(
                     meta_yaml, encoding="utf-8"

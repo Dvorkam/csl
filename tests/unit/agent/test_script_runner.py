@@ -127,14 +127,18 @@ class TestApprovalEnforcement:
 
 
 class TestIntegrityCheck:
-    def test_file_md5_normalises_newlines(self, tmp_path: Path) -> None:
+    def test_file_md5_is_byte_exact(self, tmp_path: Path) -> None:
+        # Must hash the raw bytes, matching md5(content.encode()) on the server.
+        # No newline normalisation: CRLF content keeps its CRLF digest.
         p = tmp_path / "s"
         p.write_bytes(b"line1\r\nline2\n")
-        assert file_md5(p) == hashlib.md5(b"line1\nline2\n").hexdigest()
+        assert file_md5(p) == hashlib.md5(b"line1\r\nline2\n").hexdigest()
 
     def test_verify_passes_on_match(self, tmp_path: Path) -> None:
         p = tmp_path / "s"
-        p.write_text("echo hi\n")
+        # write_bytes (not write_text) so the on-disk bytes are identical on
+        # every platform — write_text would translate \n -> \r\n on Windows.
+        p.write_bytes(b"echo hi\n")
         verify_script_integrity("s", p, hashlib.md5(b"echo hi\n").hexdigest())  # no raise
 
     def test_verify_skipped_when_approved_md5_none(self, tmp_path: Path) -> None:
