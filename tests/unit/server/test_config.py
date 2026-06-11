@@ -52,6 +52,13 @@ def test_defaults() -> None:
     assert fields["host"].default == "127.0.0.1"
     assert fields["port"].default == 8000
     assert fields["log_level"].default == "INFO"
+    assert fields["cookie_secure"].default is True
+
+
+def test_cookie_secure_override(key_files: tuple[Path, Path]) -> None:
+    master, jwt = key_files
+    assert make_settings(master, jwt, cookie_secure=False).cookie_secure is False
+    assert make_settings(master, jwt, cookie_secure=True).cookie_secure is True
 
 
 def test_explicit_overrides(key_files: tuple[Path, Path]) -> None:

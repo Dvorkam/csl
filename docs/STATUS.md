@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 8.5** — Security hardening (see TASKS.md). Next: **8.5.6** cookie `secure` flag config-driven.
+**Phase 8.5** — Security hardening (see TASKS.md). Next: **8.5.7** ARCHITECTURE.md corrections (final task of the phase).
 
 ## Up next
 
-**8.5.6–8.5.7** — cookie secure flag, ARCHITECTURE corrections. Then **Phase 9** (audit log + observability).
+**8.5.7** — update ARCHITECTURE.md to match 8.5.1–8.5.6. Then **Phase 9** (audit log + observability).
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 8.5.6 | Cookie `secure` flag config-driven. New `Settings.cookie_secure` (env `CSL_COOKIE_SECURE`, default `true`); both `api/auth.py` (refresh cookie) and `web/auth.py` (access+refresh cookies) honour it; `.env.example` documents the dev `false` override. 4 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.5.5 | Agent-side parameter validation. `script_runner.validate_params` checks job params against the approved script's `.meta.yaml` before exec (unknown params, missing required, type/min/max/choices; bool rejected as int); a script with no meta accepts no params. Wired into `run_script` and `process_manager.start`; agent `/jobs` returns structured 422 (`validation_error`). `AgentClient` raises `AgentValidationError`; jobs endpoint maps it to 422. Makes ARCHITECTURE §3.2 step 7 true. 17 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.5.4 | MD5-pinned job execution. `JobRequest.expected_md5` filled by the control station from the canonical script; agent's `/jobs` rejects with a structured 409 (`md5_mismatch`) when its approved MD5 differs. `script_runner`/`process_manager` hash the on-disk file (`verify_script_integrity`, newline-normalised `file_md5`) before exec and refuse with `ScriptIntegrityError` + audit entry when it ≠ approved MD5 (§7.4 binding now enforced at run time). `AgentClient.submit_job` translates the 409 into `AgentApprovalError`; the jobs endpoint re-syncs and surfaces the same pending-approval UX. 14 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.5.3 | Agent API bearer-token auth. `csl-agent init` generates `secrets.token_urlsafe(32)` (reused across re-runs), stores it under `identity.api_token` in config.yaml, and adds `api_token` to the registration bundle (format change — re-init required). Agent `_AuthMiddleware` enforces `Authorization: Bearer` on all endpoints incl. `/healthz` (constant-time compare, 401), outermost so unauthenticated requests don't reset the idle clock; no-token configs run open with a startup warning. Control station stores the token AES-encrypted (`machines.agent_token_encrypted`, migration `c3a5b2e8f1d4`); `AgentClient` and the direct agent-status `/healthz` call send the bearer header. 14 new tests. | branch `feature/phase-8.5-security-hardening` |

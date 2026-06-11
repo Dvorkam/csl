@@ -132,6 +132,29 @@ def test_login_success_sets_refresh_cookie(client: TestClient, user: User) -> No
     assert "refresh_token" in resp.cookies
 
 
+def test_login_cookies_secure_when_enabled(
+    client: TestClient, user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from control_station_lite.server.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "cookie_secure", True)
+    resp = client.post("/login", data={"username": "alice", "password": "secret"})
+    set_cookies = "; ".join(resp.headers.get_list("set-cookie"))
+    assert "Secure" in set_cookies
+
+
+def test_login_cookies_not_secure_when_disabled(
+    client: TestClient, user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from control_station_lite.server.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "cookie_secure", False)
+    resp = client.post("/login", data={"username": "alice", "password": "secret"})
+    set_cookies = "; ".join(resp.headers.get_list("set-cookie"))
+    assert "Secure" not in set_cookies
+
+
 # ---------------------------------------------------------------------------
 # POST /login — failure
 # ---------------------------------------------------------------------------
