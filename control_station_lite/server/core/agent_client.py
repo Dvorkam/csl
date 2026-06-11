@@ -90,6 +90,7 @@ class AgentClient:
             self._private_key,
             "127.0.0.1",
             self._machine.agent_port,
+            host_key=self._machine.ssh_host_key,
         )
         if self._http_client_override is not None:
             self._http = self._http_client_override
@@ -131,6 +132,7 @@ class AgentClient:
             self._machine.ssh_port,
             self._machine.ssh_user,
             self._private_key,
+            host_key=self._machine.ssh_host_key,
         )
         await conn.run(cmd, check=False)
         logger.info(

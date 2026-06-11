@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from control_station_lite.server.config import get_settings
 from control_station_lite.server.core.crypto import decrypt
+from control_station_lite.server.core.ssh import build_known_hosts
 from control_station_lite.server.db.models import Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.web import templates
@@ -100,7 +101,7 @@ async def ping_badge(
             port=machine.ssh_port,
             username=machine.ssh_user,
             client_keys=[asyncssh.import_private_key(private_key_bytes)],
-            known_hosts=None,
+            known_hosts=build_known_hosts(machine.ssh_host_key),
             connect_timeout=5.0,
         ):
             latency_ms = round((time.monotonic() - t0) * 1000, 2)

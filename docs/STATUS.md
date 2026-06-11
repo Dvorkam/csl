@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 8.5** — Security hardening (see TASKS.md). Next: **8.5.2** SSH host-key pinning.
+**Phase 8.5** — Security hardening (see TASKS.md). Next: **8.5.3** agent API bearer-token auth.
 
 ## Up next
 
-**8.5.2–8.5.7** — host-key pinning, agent API token, MD5-pinned execution, agent-side param validation, cookie secure flag, ARCHITECTURE corrections. Then **Phase 9** (audit log + observability).
+**8.5.3–8.5.7** — agent API token, MD5-pinned execution, agent-side param validation, cookie secure flag, ARCHITECTURE corrections. Then **Phase 9** (audit log + observability).
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 8.5.2 | SSH host-key pinning. New `machines.ssh_host_key` column (migration `b2f4a1c7d9e3`). Registration captures the server host key TOFU (`conn.get_server_host_key().export_public_key()`), stores it, and returns `ssh_host_key_fingerprint` for out-of-band confirmation. `ssh.build_known_hosts()` builds an asyncssh pin (`* <key>`); `SSHConnectionPool.get_connection/open_tunnel` take a `host_key` kwarg and `AgentClient` threads `machine.ssh_host_key`, so all agent comms + the ping/agent-status/dashboard direct connects validate and fail closed on mismatch. Legacy null keys fall back to TOFU with a warning. 9 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.5.1 | Forced-command SSH key. New `shared/ssh_commands.py` centralises the allowlist (service-start + config-read per platform); `csl-agent ssh-gateway` subcommand runs only exact-match allowlisted commands from `$SSH_ORIGINAL_COMMAND`, refuses everything else incl. empty/appended commands (exit 126). `init` now writes a `command="...",restrict,port-forwarding,permitopen="127.0.0.1:<port>"` entry and upgrades old bare-key entries in place (preserving unrelated keys). `agent_client.py` and `machines.py` import the shared constants instead of local copies. 20 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.13 | Job history page. `GET /jobs` web route with machine/script/status filters and pagination (50/page). Duration column (live ticker for running jobs). "Jobs" link added to navbar for all authenticated users. Access-controlled: non-admin users only see jobs for their bookmarked machines. 5 unit tests. README rewritten to reflect current state. | branch `feature/phase-8-admin-pages` |
 | 8.7 (fixes) | `approved_stale` now shows "Re-stage for approval" button instead of Run. Page-load batch sync (`GET /machines/{id}/sync-states`) opens ONE SSH tunnel + calls `ensure_agent_running()` before refreshing all badge divs via HTMX OOB swap. Re-stage button in `pending`/`update_pending` only appears when `pending_md5 != script.md5`. | branch `feature/phase-8-admin-pages` |

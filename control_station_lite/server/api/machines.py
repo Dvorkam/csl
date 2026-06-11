@@ -11,6 +11,8 @@
 
 """Machine management API: register, list, detail, delete, bookmark, ping, agent-status."""
 
+import base64
+import hashlib
 import time
 from datetime import datetime
 
@@ -18,14 +20,14 @@ import asyncssh
 import httpx
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from control_station_lite.server.auth.dependencies import current_user, require_admin
 from control_station_lite.server.config import get_settings
 from control_station_lite.server.core.crypto import decrypt, encrypt
-from control_station_lite.server.core.ssh import get_ssh_pool
+from control_station_lite.server.core.ssh import build_known_hosts, get_ssh_pool
 from control_station_lite.server.db.models import Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
 from control_station_lite.shared.models import AgentHealth
@@ -49,6 +51,17 @@ class RegisterMachineIn(BaseModel):
     mac_address: str | None = None
 
 
+def _host_key_fingerprint(host_key_line: str | None) -> str | None:
+    """SHA-256 fingerprint of a stored OpenSSH host-key line, or None."""
+    if not host_key_line:
+        return None
+    parts = host_key_line.split()
+    if len(parts) < 2:
+        return None
+    digest = hashlib.sha256(base64.b64decode(parts[1])).digest()
+    return "SHA256:" + base64.b64encode(digest).decode().rstrip("=")
+
+
 class MachineOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,6 +75,14 @@ class MachineOut(BaseModel):
     key_fingerprint: str
     mac_address: str | None
     created_at: datetime
+    # Source key line is read from the ORM but not serialised; the admin
+    # confirms the derived fingerprint out-of-band.
+    ssh_host_key: str | None = Field(default=None, exclude=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ssh_host_key_fingerprint(self) -> str | None:
+        return _host_key_fingerprint(self.ssh_host_key)
 
 
 class PingOut(BaseModel):
@@ -93,8 +114,12 @@ async def _ssh_connection_test(
     ssh_user: str,
     ssh_host: str,
     ssh_port: int,
-) -> None:
-    """Open a one-shot SSH connection and verify the remote key fingerprint.
+) -> str:
+    """Open a one-shot SSH connection, verify the agent key, capture the host key.
+
+    This is the single trust-on-first-use point: ``known_hosts=None`` is allowed
+    here because there is no pinned key yet. The server's host key is captured
+    and returned (OpenSSH public-key line) so the caller can pin it.
 
     Raises ValueError on fingerprint mismatch.
     Raises asyncssh.Error / OSError on connection failure.
@@ -108,6 +133,11 @@ async def _ssh_connection_test(
         known_hosts=None,
         connect_timeout=15.0,
     ) as conn:
+        server_host_key = conn.get_server_host_key()
+        if server_host_key is None:
+            raise ValueError("could not obtain the target's SSH host key")
+        host_key_line = server_host_key.export_public_key().decode().strip()
+
         result = await conn.run(_remote_config_cmd(bundle.platform), check=False)
         raw_out = result.stdout or ""
         stdout: str = (
@@ -126,6 +156,7 @@ async def _ssh_connection_test(
                 f"key fingerprint mismatch: remote={remote_fingerprint!r}, "
                 f"bundle={bundle.key_fingerprint!r}"
             )
+        return host_key_line
 
 
 async def _get_machine_or_404(machine_id: int, session: AsyncSession) -> Machine:
@@ -180,7 +211,7 @@ async def register_machine(
         )
 
     try:
-        await _ssh_connection_test(bundle, ssh_user, body.ssh_host, body.ssh_port)
+        host_key_line = await _ssh_connection_test(bundle, ssh_user, body.ssh_host, body.ssh_port)
     except (OSError, asyncssh.Error, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -197,6 +228,7 @@ async def register_machine(
         ssh_user=ssh_user,
         ssh_key_encrypted=encrypted_key,
         key_fingerprint=bundle.key_fingerprint,
+        ssh_host_key=host_key_line,
         agent_port=bundle.agent_port,
         scripts_dir=bundle.scripts_dir,
         platform=bundle.platform,
@@ -299,7 +331,7 @@ async def ping_machine(
             port=machine.ssh_port,
             username=machine.ssh_user,
             client_keys=[asyncssh.import_private_key(private_key_bytes)],
-            known_hosts=None,
+            known_hosts=build_known_hosts(machine.ssh_host_key),
             connect_timeout=5.0,
         ):
             latency_ms = (time.monotonic() - t0) * 1000
@@ -327,6 +359,7 @@ async def agent_status(
             private_key_bytes,
             "127.0.0.1",
             machine.agent_port,
+            host_key=machine.ssh_host_key,
         )
     except (OSError, asyncssh.Error):
         return AgentStatusOut(running=False)

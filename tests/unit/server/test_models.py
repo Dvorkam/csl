@@ -81,6 +81,10 @@ def test_machines_ssh_host_is_not_nullable() -> None:
     assert _col("machines", "ssh_host").nullable is False
 
 
+def test_machines_ssh_host_key_is_nullable() -> None:
+    assert _col("machines", "ssh_host_key").nullable is True
+
+
 def test_jobs_script_id_is_nullable() -> None:
     assert _col("jobs", "script_id").nullable is True
 
