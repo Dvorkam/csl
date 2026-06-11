@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 8.5** — Security hardening (see TASKS.md). Next: **8.5.7** ARCHITECTURE.md corrections (final task of the phase).
+**Phase 8.5 complete.** Next: **Phase 9** — audit log API + observability (see TASKS.md 9.1–9.6).
 
 ## Up next
 
-**8.5.7** — update ARCHITECTURE.md to match 8.5.1–8.5.6. Then **Phase 9** (audit log + observability).
+**9.1–9.3** — `server/api/audit.py` admin read API, audit decorator/helper for all state-mutating endpoints, route-table coverage guard test. Then **9.4–9.6** (JSON logging, correlation IDs, error codes). Consider opening a PR for the phase-8.5 branch first.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 8.5.7 | ARCHITECTURE.md updated to match the phase: §3.1/§3.2 (forced-command key, captured host key, bundle carries API token, job `expected_md5`, bearer on every agent request), §6.2 (`identity.api_token`), §5.1 (`ssh_host_key` + `agent_token_encrypted` columns), §7.1 (bcrypt direct + agent bearer auth + config-driven cookie Secure), §7.3 (host-key pinning), §7.4 (forced-command-backed "no shell" claim + run-time MD5 binding), §9.1 (pyproject excerpt: bcrypt/python-multipart). | branch `feature/phase-8.5-security-hardening` |
 | 8.5.6 | Cookie `secure` flag config-driven. New `Settings.cookie_secure` (env `CSL_COOKIE_SECURE`, default `true`); both `api/auth.py` (refresh cookie) and `web/auth.py` (access+refresh cookies) honour it; `.env.example` documents the dev `false` override. 4 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.5.5 | Agent-side parameter validation. `script_runner.validate_params` checks job params against the approved script's `.meta.yaml` before exec (unknown params, missing required, type/min/max/choices; bool rejected as int); a script with no meta accepts no params. Wired into `run_script` and `process_manager.start`; agent `/jobs` returns structured 422 (`validation_error`). `AgentClient` raises `AgentValidationError`; jobs endpoint maps it to 422. Makes ARCHITECTURE §3.2 step 7 true. 17 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.5.4 | MD5-pinned job execution. `JobRequest.expected_md5` filled by the control station from the canonical script; agent's `/jobs` rejects with a structured 409 (`md5_mismatch`) when its approved MD5 differs. `script_runner`/`process_manager` hash the on-disk file (`verify_script_integrity`, newline-normalised `file_md5`) before exec and refuse with `ScriptIntegrityError` + audit entry when it ≠ approved MD5 (§7.4 binding now enforced at run time). `AgentClient.submit_job` translates the 409 into `AgentApprovalError`; the jobs endpoint re-syncs and surfaces the same pending-approval UX. 14 new tests. | branch `feature/phase-8.5-security-hardening` |
