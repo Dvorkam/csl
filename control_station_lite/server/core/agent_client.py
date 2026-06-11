@@ -57,6 +57,10 @@ class AgentApprovalError(AgentClientError):
         self.approval_error = approval_error
 
 
+class AgentValidationError(AgentClientError):
+    """Raised when the agent rejects a job's parameters (HTTP 422)."""
+
+
 class AgentClient:
     """Typed HTTP client that talks to a csl-agent through an SSH tunnel.
 
@@ -217,6 +221,10 @@ class AgentClient:
                     approval_error=detail["approval_error"],
                     detail=detail.get("detail", "agent refused the job"),
                 )
+        if resp.status_code == 422:
+            detail = resp.json().get("detail")
+            if isinstance(detail, dict) and "validation_error" in detail:
+                raise AgentValidationError(detail["validation_error"])
         resp.raise_for_status()
         return JobStatusResponse.model_validate(resp.json())
 

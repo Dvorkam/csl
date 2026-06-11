@@ -30,6 +30,7 @@ from control_station_lite.agent.lifecycle import IdleTracker
 from control_station_lite.agent.log_stream import make_sse_response
 from control_station_lite.agent.process_manager import JobNotFoundError, ProcessManager
 from control_station_lite.agent.script_runner import (
+    ParamValidationError,
     ScriptIntegrityError,
     ScriptNotApprovedError,
     ScriptNotFoundError,
@@ -207,6 +208,8 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
             return pm.start(body.script_name, body.params, body.job_uuid)
         except ScriptNotApprovedError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ParamValidationError as exc:
+            raise HTTPException(status_code=422, detail={"validation_error": str(exc)}) from exc
         except ScriptIntegrityError as exc:
             raise HTTPException(
                 status_code=409,
@@ -225,6 +228,8 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
         result = run_script(body.script_name, body.params, approvals, cfg.agent.scripts_dir)
     except ScriptNotApprovedError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ParamValidationError as exc:
+        raise HTTPException(status_code=422, detail={"validation_error": str(exc)}) from exc
     except ScriptIntegrityError as exc:
         raise HTTPException(
             status_code=409,

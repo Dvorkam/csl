@@ -20,7 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from control_station_lite.server.auth.jwt import create_access_token
 from control_station_lite.server.auth.password import hash_password
-from control_station_lite.server.core.agent_client import AgentApprovalError, AgentClientError
+from control_station_lite.server.core.agent_client import (
+    AgentApprovalError,
+    AgentClientError,
+    AgentValidationError,
+)
 from control_station_lite.server.core.crypto import encrypt
 from control_station_lite.server.core.job_reconciler import reconcile_once, reconciler_loop
 from control_station_lite.server.core.script_registry import create_script
@@ -322,6 +326,29 @@ class TestSubmitJob:
         # The handler re-syncs and surfaces an approval error rather than 500/502.
         assert resp.status_code == 409
         assert "approval_error" in resp.json()["detail"]
+
+    async def test_agent_param_validation_returns_422(
+        self,
+        client: httpx.AsyncClient,
+        admin_user: User,
+        machine: Machine,
+        script: Script,
+    ) -> None:
+        descriptor = ScriptDescriptor(
+            name="hello", state=ApprovalState.approved, approved_md5=script.md5
+        )
+        ctx = _agent_client_ctx(descriptor=descriptor)
+        ctx.__aenter__.return_value.submit_job = AsyncMock(
+            side_effect=AgentValidationError("unknown parameter 'x'")
+        )
+        with patch("control_station_lite.server.api.jobs.AgentClient", return_value=ctx):
+            with patch("control_station_lite.server.api.jobs.get_ssh_pool"):
+                resp = await client.post(
+                    f"/api/machines/{machine.id}/jobs",
+                    headers=_admin_h(admin_user),
+                    json={"script_name": "hello", "params": {"x": "1"}},
+                )
+        assert resp.status_code == 422
 
     async def test_pending_script_returns_409(
         self,

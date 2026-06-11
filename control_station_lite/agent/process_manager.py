@@ -31,6 +31,7 @@ from control_station_lite.agent.script_runner import (
     build_command,
     build_env,
     find_script,
+    validate_params,
     verify_script_integrity,
 )
 from control_station_lite.agent.state import JobEntry, load_running_state, save_running_state
@@ -131,6 +132,7 @@ class ProcessManager:
 
         Raises:
             ScriptNotApprovedError: script is not in ``approved`` state.
+            ParamValidationError: params don't match the script's metadata.
             ScriptIntegrityError: on-disk script MD5 differs from the approved MD5.
             ScriptNotFoundError: no script file found for *name*.
         """
@@ -141,6 +143,7 @@ class ProcessManager:
                 f" '{descriptor.state}' (must be approved)"
             )
 
+        validate_params(name, params, self._paths.scripts_dir)
         script_path = find_script(name, self._paths.scripts_dir)
         verify_script_integrity(name, script_path, descriptor.approved_md5)
         command = build_command(script_path)

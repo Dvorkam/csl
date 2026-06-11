@@ -83,6 +83,13 @@ def _new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _write_string_param_meta(paths: CslPaths, name: str, param: str) -> None:
+    """Write a minimal meta.yaml declaring a single required string param."""
+    (paths.scripts_dir / f"{name}.meta.yaml").write_text(
+        f"params:\n  - name: {param}\n    type: string\n    required: true\n"
+    )
+
+
 # ---------------------------------------------------------------------------
 # TestApprovalEnforcement — cross-platform
 # ---------------------------------------------------------------------------
@@ -290,6 +297,7 @@ class TestStart:
     ) -> None:
         script = "#!/bin/bash\necho $CSL_PARAM_MESSAGE\n"
         _approve_script(approvals, paths, "echo_param", script)
+        _write_string_param_meta(paths, "echo_param", "message")
         job_uuid = _new_uuid()
         manager.start("echo_param", {"message": "hello"}, job_uuid)
         time.sleep(0.3)
@@ -484,6 +492,7 @@ class TestWindowsStart:
     ) -> None:
         script = "Write-Output $env:CSL_PARAM_MESSAGE\r\n"
         _approve_script(approvals, paths, "echo_param", script, ".ps1")
+        _write_string_param_meta(paths, "echo_param", "message")
         job_uuid = _new_uuid()
         manager.start("echo_param", {"message": "hello"}, job_uuid)
         time.sleep(1.0)

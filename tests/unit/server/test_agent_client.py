@@ -13,6 +13,7 @@ from control_station_lite.server.core.agent_client import (
     AgentClient,
     AgentClientError,
     AgentNotReachableError,
+    AgentValidationError,
 )
 from control_station_lite.server.core.ssh import SSHConnectionPool
 from control_station_lite.server.db.models import Machine
@@ -286,6 +287,14 @@ async def test_submit_job_409_raises_approval_error() -> None:
             await c.submit_job(JobRequest(job_uuid="uuid-1", script_name="hello"))
     assert exc_info.value.approval_error == "md5_mismatch"
     assert exc_info.value.agent_state == "approved"
+
+
+async def test_submit_job_422_raises_validation_error() -> None:
+    pool = _pool()
+    http = _http({"POST /jobs": (422, {"detail": {"validation_error": "unknown parameter 'x'"}})})
+    async with AgentClient(_machine(), os.urandom(32), pool, _http_client=http) as c:
+        with pytest.raises(AgentValidationError, match="unknown parameter"):
+            await c.submit_job(JobRequest(job_uuid="uuid-1", script_name="hello"))
 
 
 async def test_kill_job(client_ctx: AgentClient) -> None:

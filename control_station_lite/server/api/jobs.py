@@ -30,6 +30,7 @@ from control_station_lite.server.core.agent_client import (
     AgentApprovalError,
     AgentClient,
     AgentClientError,
+    AgentValidationError,
 )
 from control_station_lite.server.core.crypto import decrypt
 from control_station_lite.server.core.script_registry import (
@@ -170,6 +171,10 @@ async def submit_job(
         )
         try:
             agent_resp = await client.submit_job(request)
+        except AgentValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+            ) from exc
         except AgentApprovalError:
             # Agent's approved MD5 drifted from ours (or the on-disk file changed)
             # between sync and submit. Re-sync to refresh the cache and surface

@@ -145,6 +145,16 @@ class TestSubmitJobEndpoint:
         assert resp.status_code == 409
         assert resp.json()["detail"]["approval_error"] == "md5_mismatch"
 
+    def test_unexpected_params_returns_422(self, isolated_client: TestClient) -> None:
+        # Script has no meta.yaml, so it accepts no parameters.
+        _stage_and_approve(isolated_client, "noparams", "#!/bin/bash\necho ok\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u4", "script_name": "noparams", "params": {"x": "1"}},
+        )
+        assert resp.status_code == 422
+        assert "validation_error" in resp.json()["detail"]
+
     def test_tampered_script_returns_409_integrity(self, isolated_client: TestClient) -> None:
         _stage_and_approve(isolated_client, "tamper", "#!/bin/bash\necho ok\n")
         paths = isolated_client.app.state.config.agent.to_csl_paths()
