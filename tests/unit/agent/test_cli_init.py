@@ -357,7 +357,7 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:abc", 47731)
+            _write_config(config_path, "SHA256:abc", 47731, "tok-abc")
 
         assert config_path.exists()
 
@@ -367,11 +367,12 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:abc", 47731)
+            _write_config(config_path, "SHA256:abc", 47731, "tok-abc")
 
         data = yaml.safe_load(config_path.read_text())
         assert data["agent"]["listen_port"] == 47731
         assert data["identity"]["key_fingerprint"] == "SHA256:abc"
+        assert data["identity"]["api_token"] == "tok-abc"
 
     def test_custom_port(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.yaml"
@@ -379,7 +380,7 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:xyz", 9000)
+            _write_config(config_path, "SHA256:xyz", 9000, "tok-xyz")
 
         data = yaml.safe_load(config_path.read_text())
         assert data["agent"]["listen_port"] == 9000
@@ -390,7 +391,7 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:abc", 47731)
+            _write_config(config_path, "SHA256:abc", 47731, "tok-abc")
 
         data = yaml.safe_load(config_path.read_text())
         assert data["approval_policy"]["auto_approve"] == []

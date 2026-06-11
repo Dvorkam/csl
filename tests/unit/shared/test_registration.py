@@ -15,6 +15,7 @@ _SAMPLE = {
     "hostname_hint": "my-pc",
     "platform": "linux",
     "ssh_user": "alice",
+    "api_token": "test-token-abc123",
 }
 
 
@@ -49,6 +50,7 @@ class TestEncodeBundle:
         assert bundle.scripts_dir == _SAMPLE["scripts_dir"]
         assert bundle.hostname_hint == _SAMPLE["hostname_hint"]
         assert bundle.ssh_user == _SAMPLE["ssh_user"]
+        assert bundle.api_token == _SAMPLE["api_token"]
 
 
 class TestRegistrationBundleDecode:

@@ -14,13 +14,14 @@ from __future__ import annotations
 import asyncio
 import importlib.metadata
 import logging
+import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from control_station_lite.agent.approvals import ApprovalError, ApprovalsManager
@@ -74,6 +75,11 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         _AGENT_HOST,
         cfg.agent.listen_port,
     )
+    if not cfg.identity.api_token:
+        logger.warning(
+            "no api_token configured — agent API is UNAUTHENTICATED; "
+            "run 'csl-agent init' to secure it"
+        )
     shutdown_task = asyncio.create_task(
         tracker.run_loop(
             process_mgr,
@@ -114,7 +120,29 @@ class _ActivityMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class _AuthMiddleware(BaseHTTPMiddleware):
+    """Require the control station's bearer token on every request.
+
+    Enforced on all endpoints (including ``/healthz``) whenever the agent has an
+    ``api_token`` configured. Legacy configs without a token run unauthenticated
+    (a startup warning is logged) so an un-reinitialised agent is not bricked.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        cfg: AgentConfig | None = getattr(request.app.state, "config", None)
+        expected = cfg.identity.api_token if cfg is not None else None
+        if expected:
+            header = request.headers.get("Authorization", "")
+            provided = header[7:] if header.startswith("Bearer ") else ""
+            if not secrets.compare_digest(provided, expected):
+                return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
+# Auth is added last so it runs outermost — unauthenticated requests are
+# rejected before they can reset the idle clock.
 app.add_middleware(_ActivityMiddleware)
+app.add_middleware(_AuthMiddleware)
 
 
 @app.get("/healthz", response_model=AgentHealth)

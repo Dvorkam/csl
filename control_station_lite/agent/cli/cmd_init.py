@@ -18,6 +18,7 @@ import base64
 import getpass
 import hashlib
 import logging
+import secrets
 import shutil
 import socket
 import sys
@@ -217,7 +218,7 @@ def _append_authorized_keys(
 # ---------------------------------------------------------------------------
 
 
-def _write_config(config_path: Path, fingerprint: str, port: int) -> None:
+def _write_config(config_path: Path, fingerprint: str, port: int, api_token: str) -> None:
     """Write ``config.yaml`` with platform defaults. Always overwrites."""
     import yaml
 
@@ -241,6 +242,7 @@ def _write_config(config_path: Path, fingerprint: str, port: int) -> None:
         "identity": {
             "key_fingerprint": fingerprint,
             "hostname_hint": socket.gethostname(),
+            "api_token": api_token,
         },
         "approval_policy": {
             "auto_approve": [],
@@ -314,6 +316,10 @@ def cmd_init(args: argparse.Namespace) -> None:
     keys_dir.mkdir(parents=True, exist_ok=True)
     logger.info("directories ready under %s", base)
 
+    # Reuse an existing API token across re-runs so re-init (e.g. to upgrade the
+    # authorized_keys entry) does not invalidate an existing registration.
+    api_token = cfg.identity.api_token or secrets.token_urlsafe(32)
+
     # 2 — SSH keypair
     private_pem, fingerprint, public_openssh = _generate_keypair(keys_dir)
 
@@ -325,7 +331,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     )
 
     # 4 — config.yaml
-    _write_config(default_config_path(), fingerprint, port)
+    _write_config(default_config_path(), fingerprint, port, api_token)
 
     # 5 — approvals.json
     _write_approvals(paths.approvals_path)
@@ -352,6 +358,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         hostname_hint=socket.gethostname(),
         platform=_platform_name(),
         ssh_user=getpass.getuser(),
+        api_token=api_token,
     )
 
     print("\n=== REGISTRATION BUNDLE (send this to the control station admin) ===")

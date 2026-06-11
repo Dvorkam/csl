@@ -123,6 +123,22 @@ async def test_enter_opens_tunnel() -> None:
     pool.open_tunnel.assert_called_once()
 
 
+def test_auth_headers_empty_when_no_token() -> None:
+    client = AgentClient(_machine(), os.urandom(32), _pool())
+    assert client._auth_headers() == {}
+
+
+def test_auth_headers_bearer_when_token_set() -> None:
+    machine = _machine()
+    machine.agent_token_encrypted = b"ciphertext"
+    client = AgentClient(machine, os.urandom(32), _pool())
+    with (
+        patch("control_station_lite.server.core.agent_client.get_settings"),
+        patch("control_station_lite.server.core.agent_client.decrypt", return_value=b"my-token"),
+    ):
+        assert client._auth_headers() == {"Authorization": "Bearer my-token"}
+
+
 async def test_exit_closes_listener() -> None:
     pool = _pool()
     listener = pool.open_tunnel.return_value[0]

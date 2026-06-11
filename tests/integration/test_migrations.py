@@ -90,6 +90,7 @@ def test_machines_columns(alembic_cfg: Config, tmp_path: Path) -> None:
         "ssh_key_encrypted",
         "key_fingerprint",
         "ssh_host_key",
+        "agent_token_encrypted",
         "agent_port",
         "scripts_dir",
         "platform",

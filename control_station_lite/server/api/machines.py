@@ -185,6 +185,14 @@ def _decrypt_private_key(machine: Machine) -> bytes:
     return decrypt(machine.ssh_key_encrypted, master_key)
 
 
+def _agent_auth_headers(machine: Machine) -> dict[str, str]:
+    """Bearer-token header for the agent API, or empty for legacy machines."""
+    if not machine.agent_token_encrypted:
+        return {}
+    token = decrypt(machine.agent_token_encrypted, get_settings().read_master_key()).decode()
+    return {"Authorization": f"Bearer {token}"}
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -220,6 +228,7 @@ async def register_machine(
 
     master_key = get_settings().read_master_key()
     encrypted_key = encrypt(bundle.private_key.encode(), master_key)
+    encrypted_token = encrypt(bundle.api_token.encode(), master_key)
 
     machine = Machine(
         name=body.name,
@@ -229,6 +238,7 @@ async def register_machine(
         ssh_key_encrypted=encrypted_key,
         key_fingerprint=bundle.key_fingerprint,
         ssh_host_key=host_key_line,
+        agent_token_encrypted=encrypted_token,
         agent_port=bundle.agent_port,
         scripts_dir=bundle.scripts_dir,
         platform=bundle.platform,
@@ -366,7 +376,9 @@ async def agent_status(
 
     try:
         async with httpx.AsyncClient(
-            base_url=f"http://127.0.0.1:{local_port}", timeout=2.0
+            base_url=f"http://127.0.0.1:{local_port}",
+            timeout=2.0,
+            headers=_agent_auth_headers(machine),
         ) as http:
             resp = await http.get("/healthz")
             if resp.status_code == 200:

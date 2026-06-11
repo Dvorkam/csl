@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from control_station_lite.agent.config import AgentConfig, AgentSection
+from control_station_lite.agent.config import AgentConfig, AgentSection, IdentitySection
 from control_station_lite.agent.main import _AGENT_HOST, app
 
 
@@ -47,6 +47,45 @@ def isolated_client(tmp_path: Path) -> TestClient:
     with patch("control_station_lite.agent.main.load_config", return_value=cfg):
         with TestClient(app) as c:
             yield c
+
+
+_TOKEN = "s3cret-agent-token"
+
+
+@pytest.fixture
+def authed_client(tmp_path: Path) -> TestClient:
+    """Client whose agent has an api_token configured (auth enforced)."""
+    cfg = AgentConfig(
+        agent=AgentSection(csl_dir=tmp_path / ".csl"),
+        identity=IdentitySection(api_token=_TOKEN),
+    )
+    with patch("control_station_lite.agent.main.load_config", return_value=cfg):
+        with TestClient(app) as c:
+            yield c
+
+
+class TestBearerTokenAuth:
+    def test_missing_token_is_401(self, authed_client: TestClient) -> None:
+        assert authed_client.get("/healthz").status_code == 401
+
+    def test_wrong_token_is_401(self, authed_client: TestClient) -> None:
+        resp = authed_client.get("/healthz", headers={"Authorization": "Bearer nope"})
+        assert resp.status_code == 401
+
+    def test_malformed_header_is_401(self, authed_client: TestClient) -> None:
+        resp = authed_client.get("/healthz", headers={"Authorization": _TOKEN})
+        assert resp.status_code == 401
+
+    def test_correct_token_is_200(self, authed_client: TestClient) -> None:
+        resp = authed_client.get("/healthz", headers={"Authorization": f"Bearer {_TOKEN}"})
+        assert resp.status_code == 200
+
+    def test_enforced_on_non_health_endpoint(self, authed_client: TestClient) -> None:
+        assert authed_client.get("/scripts/foo/state").status_code == 401
+
+    def test_no_token_configured_allows_request(self, isolated_client: TestClient) -> None:
+        # Legacy config with no api_token runs unauthenticated.
+        assert isolated_client.get("/healthz").status_code == 200
 
 
 class TestScriptStateEndpoint:

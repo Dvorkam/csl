@@ -30,6 +30,7 @@ _BUNDLE_KWARGS = {
     "hostname_hint": "my-pc",
     "platform": "linux",
     "ssh_user": "alice",
+    "api_token": "agent-token-xyz",
 }
 
 

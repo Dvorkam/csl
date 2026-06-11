@@ -18,6 +18,7 @@ and talk to the agent:
 
   private_key    — OpenSSH PEM-encoded Ed25519 private key (string)
   key_fingerprint — SHA256 fingerprint (e.g. "SHA256:abc…")
+  api_token      — bearer token the control station presents to the agent (string)
   agent_port     — TCP port the agent listens on (int)
   scripts_dir    — absolute path to approved scripts on the target (string)
   hostname_hint  — human-readable hostname, advisory only (string)
@@ -39,6 +40,7 @@ _REQUIRED_FIELDS = frozenset(
     {
         "private_key",
         "key_fingerprint",
+        "api_token",
         "agent_port",
         "scripts_dir",
         "hostname_hint",
@@ -62,6 +64,7 @@ class RegistrationBundle:
         hostname_hint: str,
         platform: str,
         ssh_user: str,
+        api_token: str,
     ) -> None:
         self.private_key = private_key
         self.key_fingerprint = key_fingerprint
@@ -70,6 +73,7 @@ class RegistrationBundle:
         self.hostname_hint = hostname_hint
         self.platform = platform
         self.ssh_user = ssh_user
+        self.api_token = api_token
 
     def encode(self) -> str:
         """Return the base64-encoded JSON representation."""
@@ -81,6 +85,7 @@ class RegistrationBundle:
             hostname_hint=self.hostname_hint,
             platform=self.platform,
             ssh_user=self.ssh_user,
+            api_token=self.api_token,
         )
 
     @classmethod
@@ -118,6 +123,7 @@ class RegistrationBundle:
             hostname_hint=data["hostname_hint"],
             platform=platform,
             ssh_user=data["ssh_user"],
+            api_token=data["api_token"],
         )
 
 
@@ -130,6 +136,7 @@ def encode_bundle(
     hostname_hint: str,
     platform: str,
     ssh_user: str,
+    api_token: str,
 ) -> str:
     """Return a base64-encoded JSON registration bundle string."""
     payload: dict[str, Any] = {
@@ -140,5 +147,6 @@ def encode_bundle(
         "hostname_hint": hostname_hint,
         "platform": platform,
         "ssh_user": ssh_user,
+        "api_token": api_token,
     }
     return base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()

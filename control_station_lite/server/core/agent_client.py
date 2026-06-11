@@ -16,6 +16,8 @@ from collections.abc import AsyncGenerator
 import asyncssh
 import httpx
 
+from control_station_lite.server.config import get_settings
+from control_station_lite.server.core.crypto import decrypt
 from control_station_lite.server.core.ssh import SSHConnectionPool
 from control_station_lite.server.db.models import Machine
 from control_station_lite.shared.models import (
@@ -98,8 +100,17 @@ class AgentClient:
             self._http = httpx.AsyncClient(
                 base_url=f"http://127.0.0.1:{self._local_port}",
                 timeout=30.0,
+                headers=self._auth_headers(),
             )
         return self
+
+    def _auth_headers(self) -> dict[str, str]:
+        """Bearer-token header for the agent API, or empty for legacy machines."""
+        enc = self._machine.agent_token_encrypted
+        if not enc:
+            return {}
+        token = decrypt(enc, get_settings().read_master_key()).decode()
+        return {"Authorization": f"Bearer {token}"}
 
     async def __aexit__(self, *_: object) -> None:
         if self._http is not None and self._http_client_override is None:

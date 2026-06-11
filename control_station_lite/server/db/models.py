@@ -54,6 +54,9 @@ class Machine(Base):
     # Pinned SSH server host key (OpenSSH public-key line), captured at
     # registration. Null only for machines registered before host-key pinning.
     ssh_host_key: Mapped[str | None] = mapped_column(Text)
+    # Bearer token for the agent API, AES-256-GCM encrypted with the master key.
+    # Null only for machines registered before agent-token auth.
+    agent_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     agent_port: Mapped[int] = mapped_column(Integer)
     scripts_dir: Mapped[str] = mapped_column(Text)
     platform: Mapped[str] = mapped_column(Text)
