@@ -18,6 +18,7 @@ import yaml
 from control_station_lite.agent.cli import main
 from control_station_lite.agent.cli.cmd_init import (
     _append_authorized_keys,
+    _build_authorized_keys_entry,
     _generate_keypair,
     _platform_name,
     _ssh_fingerprint,
@@ -152,6 +153,99 @@ class TestAppendAuthorizedKeys:
 
 
 # ---------------------------------------------------------------------------
+# Forced-command restriction (task 8.5.1)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildAuthorizedKeysEntry:
+    def test_includes_forced_gateway_command(self, tmp_path: Path) -> None:
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        entry = _build_authorized_keys_entry(pub, 36717)
+        assert 'command="' in entry
+        assert "ssh-gateway" in entry
+
+    def test_includes_restrict_and_permitopen(self, tmp_path: Path) -> None:
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        entry = _build_authorized_keys_entry(pub, 40000)
+        assert "restrict" in entry
+        assert "port-forwarding" in entry
+        assert 'permitopen="127.0.0.1:40000"' in entry
+
+    def test_ends_with_public_key_line(self, tmp_path: Path) -> None:
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        entry = _build_authorized_keys_entry(pub, 36717)
+        assert entry.endswith(pub.decode().strip())
+
+    def test_port_is_honoured(self, tmp_path: Path) -> None:
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        assert 'permitopen="127.0.0.1:12345"' in _build_authorized_keys_entry(pub, 12345)
+
+
+class TestAppendAuthorizedKeysRestricted:
+    def test_written_entry_is_restricted(self, tmp_path: Path) -> None:
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
+        ):
+            _append_authorized_keys(pub, agent_port=36717)
+
+        content = (tmp_path / ".ssh" / "authorized_keys").read_text()
+        assert 'command="' in content
+        assert "ssh-gateway" in content
+        assert 'permitopen="127.0.0.1:36717"' in content
+
+    def test_upgrades_old_bare_key_entry(self, tmp_path: Path) -> None:
+        # Simulate an authorized_keys written by an older, unrestricted init.
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        ak = ssh_dir / "authorized_keys"
+        ak.write_text(pub.decode().strip() + "\n")
+
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
+        ):
+            _append_authorized_keys(pub, agent_port=36717)
+
+        content = ak.read_text()
+        key_body = pub.decode().split()[1]
+        # Key appears exactly once, now carrying the restriction.
+        assert content.count(key_body) == 1
+        assert "ssh-gateway" in content
+
+    def test_preserves_unrelated_keys_on_upgrade(self, tmp_path: Path) -> None:
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        ak = ssh_dir / "authorized_keys"
+        ak.write_text("ssh-rsa OTHER_KEY someone@elsewhere\n")
+
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
+        ):
+            _append_authorized_keys(pub, agent_port=36717)
+
+        content = ak.read_text()
+        assert "OTHER_KEY" in content
+        assert "ssh-gateway" in content
+
+    def test_idempotent_across_reruns(self, tmp_path: Path) -> None:
+        _, _, pub = _generate_keypair(tmp_path / "keys")
+        with (
+            patch("pathlib.Path.home", return_value=tmp_path),
+            patch("control_station_lite.agent.cli.cmd_init._windows_is_admin", return_value=False),
+        ):
+            _append_authorized_keys(pub, agent_port=36717)
+            _append_authorized_keys(pub, agent_port=36717)
+
+        content = (tmp_path / ".ssh" / "authorized_keys").read_text()
+        assert content.count(pub.decode().split()[1]) == 1
+
+
+# ---------------------------------------------------------------------------
 # _windows_is_admin
 # ---------------------------------------------------------------------------
 
@@ -263,7 +357,7 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:abc", 47731)
+            _write_config(config_path, "SHA256:abc", 47731, "tok-abc")
 
         assert config_path.exists()
 
@@ -273,11 +367,12 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:abc", 47731)
+            _write_config(config_path, "SHA256:abc", 47731, "tok-abc")
 
         data = yaml.safe_load(config_path.read_text())
         assert data["agent"]["listen_port"] == 47731
         assert data["identity"]["key_fingerprint"] == "SHA256:abc"
+        assert data["identity"]["api_token"] == "tok-abc"
 
     def test_custom_port(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.yaml"
@@ -285,7 +380,7 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:xyz", 9000)
+            _write_config(config_path, "SHA256:xyz", 9000, "tok-xyz")
 
         data = yaml.safe_load(config_path.read_text())
         assert data["agent"]["listen_port"] == 9000
@@ -296,7 +391,7 @@ class TestWriteConfig:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path,
         ):
-            _write_config(config_path, "SHA256:abc", 47731)
+            _write_config(config_path, "SHA256:abc", 47731, "tok-abc")
 
         data = yaml.safe_load(config_path.read_text())
         assert data["approval_policy"]["auto_approve"] == []

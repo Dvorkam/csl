@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import subprocess
@@ -20,18 +21,28 @@ from pathlib import Path
 from control_station_lite.agent.approvals import ApprovalsManager
 from control_station_lite.shared.models import ApprovalState
 from control_station_lite.shared.platform_info import IS_WINDOWS
+from control_station_lite.shared.script_meta import ParamDescriptor, ParamType, parse_meta_yaml
 
 __all__ = [
+    "ParamValidationError",
+    "ScriptIntegrityError",
     "ScriptNotApprovedError",
     "ScriptNotFoundError",
     "ScriptResult",
     "build_command",
     "build_env",
+    "file_md5",
     "find_script",
     "run_script",
+    "validate_params",
+    "verify_script_integrity",
 ]
 
+# JSON parameter value as received from the control station.
+ParamValue = str | int | float | bool
+
 logger = logging.getLogger(__name__)
+_audit = logging.getLogger("csl.agent.audit")
 
 # Platform-specific ordered candidate extensions.  The first match wins.
 _LINUX_EXTENSIONS = (".sh", ".bash", "")
@@ -44,6 +55,14 @@ class ScriptNotApprovedError(RuntimeError):
 
 class ScriptNotFoundError(FileNotFoundError):
     """Raised when no executable script file can be found for the given name."""
+
+
+class ScriptIntegrityError(RuntimeError):
+    """Raised when an on-disk script's MD5 does not match its approved MD5."""
+
+
+class ParamValidationError(ValueError):
+    """Raised when job parameters don't match the script's metadata."""
 
 
 @dataclass
@@ -74,7 +93,9 @@ def run_script(
             f"refusing to run '{name}': approval state is '{descriptor.state}' (must be approved)"
         )
 
+    validate_params(name, params, scripts_dir)
     script_path = find_script(name, scripts_dir)
+    verify_script_integrity(name, script_path, descriptor.approved_md5)
     command = build_command(script_path)
     env = build_env(params)
 
@@ -106,6 +127,110 @@ def run_script(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def validate_params(name: str, params: dict[str, ParamValue], scripts_dir: Path) -> None:
+    """Validate *params* against the approved script's ``.meta.yaml``.
+
+    Enforces the metadata contract at the trust boundary (ARCHITECTURE §3.2):
+    unknown params, missing required params, and type / min / max / choices
+    violations are rejected. A script with no ``.meta.yaml`` accepts no params.
+
+    Raises:
+        ParamValidationError: if any parameter fails validation.
+    """
+    meta_path = scripts_dir / f"{name}.meta.yaml"
+    if not meta_path.exists():
+        if params:
+            raise ParamValidationError(
+                f"script '{name}' accepts no parameters but got {sorted(params)}"
+            )
+        return
+
+    meta = parse_meta_yaml(meta_path.read_text(encoding="utf-8"))
+    descriptors = {p.name: p for p in meta.params}
+
+    errors: list[str] = []
+    for key in params:
+        if key not in descriptors:
+            errors.append(f"unknown parameter '{key}'")
+    for descriptor in meta.params:
+        if descriptor.name not in params:
+            if descriptor.required:
+                errors.append(f"missing required parameter '{descriptor.name}'")
+            continue
+        errors.extend(_validate_value(descriptor, params[descriptor.name]))
+
+    if errors:
+        raise ParamValidationError(f"invalid parameters for '{name}': " + "; ".join(errors))
+
+
+def _validate_value(descriptor: ParamDescriptor, value: ParamValue) -> list[str]:
+    """Return a list of validation error strings for a single parameter value."""
+    name = descriptor.name
+    if descriptor.type in (ParamType.string, ParamType.path):
+        if not isinstance(value, str):
+            return [f"'{name}' must be a string"]
+    elif descriptor.type == ParamType.bool:
+        if not isinstance(value, bool):
+            return [f"'{name}' must be a boolean"]
+    elif descriptor.type == ParamType.int:
+        # bool is a subclass of int — reject it explicitly.
+        if isinstance(value, bool) or not isinstance(value, int):
+            return [f"'{name}' must be an integer"]
+        return _check_bounds(descriptor, value)
+    elif descriptor.type == ParamType.float:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return [f"'{name}' must be a number"]
+        return _check_bounds(descriptor, value)
+    elif descriptor.type == ParamType.choice:
+        if value not in (descriptor.choices or []):
+            return [f"'{name}' must be one of {descriptor.choices}"]
+    return []
+
+
+def _check_bounds(descriptor: ParamDescriptor, value: float) -> list[str]:
+    errors: list[str] = []
+    if descriptor.min is not None and value < descriptor.min:
+        errors.append(f"'{descriptor.name}' must be >= {descriptor.min}")
+    if descriptor.max is not None and value > descriptor.max:
+        errors.append(f"'{descriptor.name}' must be <= {descriptor.max}")
+    return errors
+
+
+def file_md5(path: Path) -> str:
+    """MD5 of a script file, computed byte-for-byte over the on-disk content.
+
+    This must match ``md5(content.encode())`` as computed by the control station
+    (see ``server/core/script_registry._compute_md5``), which hashes the raw
+    canonical content with no newline translation. The agent therefore writes
+    script content byte-exact (``ApprovalsManager.stage`` uses ``newline=""``)
+    and hashes it byte-exact here, so the digests agree on every platform
+    regardless of LF/CRLF.
+    """
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def verify_script_integrity(name: str, script_path: Path, approved_md5: str | None) -> None:
+    """Refuse to run if the on-disk script no longer matches its approved MD5.
+
+    Approval is bound to a specific MD5 (ARCHITECTURE §7.4): this enforces that
+    binding at execution time, not only when the script was approved. A mismatch
+    means the approved file changed on disk outside the approval flow.
+    """
+    if approved_md5 is None:
+        return
+    actual = file_md5(script_path)
+    if actual != approved_md5:
+        _audit.warning(
+            "action=integrity_violation script=%s approved_md5=%s actual_md5=%s",
+            name,
+            approved_md5,
+            actual,
+        )
+        raise ScriptIntegrityError(
+            f"refusing to run '{name}': on-disk MD5 {actual} != approved {approved_md5}"
+        )
 
 
 def find_script(name: str, scripts_dir: Path) -> Path:

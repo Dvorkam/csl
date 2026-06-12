@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "INFO"
+    # Set the Secure flag on auth cookies. Default on (production runs behind
+    # nginx/TLS); set CSL_COOKIE_SECURE=false for plain-HTTP localhost dev.
+    cookie_secure: bool = True
 
     @field_validator("master_key_path", mode="after")
     @classmethod

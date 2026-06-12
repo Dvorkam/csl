@@ -14,13 +14,14 @@ from __future__ import annotations
 import asyncio
 import importlib.metadata
 import logging
+import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from control_station_lite.agent.approvals import ApprovalError, ApprovalsManager
@@ -29,6 +30,8 @@ from control_station_lite.agent.lifecycle import IdleTracker
 from control_station_lite.agent.log_stream import make_sse_response
 from control_station_lite.agent.process_manager import JobNotFoundError, ProcessManager
 from control_station_lite.agent.script_runner import (
+    ParamValidationError,
+    ScriptIntegrityError,
     ScriptNotApprovedError,
     ScriptNotFoundError,
     run_script,
@@ -74,6 +77,11 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         _AGENT_HOST,
         cfg.agent.listen_port,
     )
+    if not cfg.identity.api_token:
+        logger.warning(
+            "no api_token configured — agent API is UNAUTHENTICATED; "
+            "run 'csl-agent init' to secure it"
+        )
     shutdown_task = asyncio.create_task(
         tracker.run_loop(
             process_mgr,
@@ -114,7 +122,29 @@ class _ActivityMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class _AuthMiddleware(BaseHTTPMiddleware):
+    """Require the control station's bearer token on every request.
+
+    Enforced on all endpoints (including ``/healthz``) whenever the agent has an
+    ``api_token`` configured. Legacy configs without a token run unauthenticated
+    (a startup warning is logged) so an un-reinitialised agent is not bricked.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        cfg: AgentConfig | None = getattr(request.app.state, "config", None)
+        expected = cfg.identity.api_token if cfg is not None else None
+        if expected:
+            header = request.headers.get("Authorization", "")
+            provided = header[7:] if header.startswith("Bearer ") else ""
+            if not secrets.compare_digest(provided, expected):
+                return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
+# Auth is added last so it runs outermost — unauthenticated requests are
+# rejected before they can reset the idle clock.
 app.add_middleware(_ActivityMiddleware)
+app.add_middleware(_AuthMiddleware)
 
 
 @app.get("/healthz", response_model=AgentHealth)
@@ -159,11 +189,36 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
     pm: ProcessManager = request.app.state.process_manager
     cfg: AgentConfig = request.app.state.config
 
+    if body.expected_md5 is not None:
+        descriptor = approvals.get_state(body.script_name)
+        if descriptor.approved_md5 != body.expected_md5:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "approval_error": "md5_mismatch",
+                    "agent_state": descriptor.state,
+                    "detail": (
+                        f"approved MD5 {descriptor.approved_md5} != expected {body.expected_md5}"
+                    ),
+                },
+            )
+
     if body.persistent:
         try:
             return pm.start(body.script_name, body.params, body.job_uuid)
         except ScriptNotApprovedError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ParamValidationError as exc:
+            raise HTTPException(status_code=422, detail={"validation_error": str(exc)}) from exc
+        except ScriptIntegrityError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "approval_error": "integrity",
+                    "agent_state": "approved",
+                    "detail": str(exc),
+                },
+            ) from exc
         except ScriptNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -173,6 +228,13 @@ async def submit_job(body: JobRequest, request: Request) -> JobStatusResponse:
         result = run_script(body.script_name, body.params, approvals, cfg.agent.scripts_dir)
     except ScriptNotApprovedError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ParamValidationError as exc:
+        raise HTTPException(status_code=422, detail={"validation_error": str(exc)}) from exc
+    except ScriptIntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"approval_error": "integrity", "agent_state": "approved", "detail": str(exc)},
+        ) from exc
     except ScriptNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -21,6 +21,7 @@ from .cmd_approvals import dispatch_approvals
 from .cmd_init import cmd_init
 from .cmd_policy import dispatch_policy
 from .cmd_setup import cmd_setup
+from .cmd_ssh_gateway import cmd_ssh_gateway
 
 
 def main() -> None:
@@ -54,6 +55,12 @@ def main() -> None:
     subparsers.add_parser(
         "setup",
         help="Check SSH daemon prerequisites and attempt automatic fixes",
+    )
+
+    # --- ssh-gateway (forced command; not for interactive use) ---
+    subparsers.add_parser(
+        "ssh-gateway",
+        help="Internal: forced command for the control station's SSH key",
     )
 
     # --- approvals ---
@@ -92,6 +99,8 @@ def main() -> None:
 
     if args.command == "init":
         cmd_init(args)
+    elif args.command == "ssh-gateway":
+        sys.exit(cmd_ssh_gateway())
     elif args.command == "setup":
         cmd_setup()
     elif args.command == "approvals":

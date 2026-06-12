@@ -18,13 +18,18 @@ import pytest
 from control_station_lite.agent.approvals import ApprovalsManager
 from control_station_lite.agent.paths import CslPaths
 from control_station_lite.agent.script_runner import (
+    ParamValidationError,
+    ScriptIntegrityError,
     ScriptNotApprovedError,
     ScriptNotFoundError,
     ScriptResult,
     build_command,
     build_env,
+    file_md5,
     find_script,
     run_script,
+    validate_params,
+    verify_script_integrity,
 )
 
 # ---------------------------------------------------------------------------
@@ -66,6 +71,23 @@ def _approve_script(
         approved.rename(paths.scripts_dir / f"{name}{extension}")
 
 
+def _meta_body(params: dict[str, str]) -> str:
+    body = "params:\n"
+    for pname, ptype in params.items():
+        body += f"  - name: {pname}\n    type: {ptype}\n    required: true\n"
+    return body
+
+
+def _write_meta(paths: CslPaths, name: str, params: dict[str, str]) -> None:
+    """Write a meta.yaml declaring each *param name → type* as a required param."""
+    (paths.scripts_dir / f"{name}.meta.yaml").write_text(_meta_body(params))
+
+
+def _write_meta_dir(directory: Path, name: str, params: dict[str, str]) -> None:
+    """Like :func:`_write_meta` but writing into a plain directory."""
+    (directory / f"{name}.meta.yaml").write_text(_meta_body(params))
+
+
 # ---------------------------------------------------------------------------
 # TestApprovalEnforcement — cross-platform
 # ---------------------------------------------------------------------------
@@ -97,6 +119,102 @@ class TestApprovalEnforcement:
         (paths.scripts_dir / "s").unlink()
         with pytest.raises(ScriptNotFoundError):
             run_script("s", {}, approvals, paths.scripts_dir)
+
+
+# ---------------------------------------------------------------------------
+# TestIntegrityCheck — on-disk MD5 must match approved MD5 (task 8.5.4)
+# ---------------------------------------------------------------------------
+
+
+class TestIntegrityCheck:
+    def test_file_md5_is_byte_exact(self, tmp_path: Path) -> None:
+        # Must hash the raw bytes, matching md5(content.encode()) on the server.
+        # No newline normalisation: CRLF content keeps its CRLF digest.
+        p = tmp_path / "s"
+        p.write_bytes(b"line1\r\nline2\n")
+        assert file_md5(p) == hashlib.md5(b"line1\r\nline2\n").hexdigest()
+
+    def test_verify_passes_on_match(self, tmp_path: Path) -> None:
+        p = tmp_path / "s"
+        # write_bytes (not write_text) so the on-disk bytes are identical on
+        # every platform — write_text would translate \n -> \r\n on Windows.
+        p.write_bytes(b"echo hi\n")
+        verify_script_integrity("s", p, hashlib.md5(b"echo hi\n").hexdigest())  # no raise
+
+    def test_verify_skipped_when_approved_md5_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "s"
+        p.write_text("anything\n")
+        verify_script_integrity("s", p, None)  # no raise
+
+    def test_verify_raises_on_mismatch(self, tmp_path: Path) -> None:
+        p = tmp_path / "s"
+        p.write_text("tampered\n")
+        with pytest.raises(ScriptIntegrityError):
+            verify_script_integrity("s", p, "deadbeef")
+
+    def test_run_script_refuses_tampered_file(
+        self, approvals: ApprovalsManager, paths: CslPaths
+    ) -> None:
+        _approve_script(approvals, paths, "s", "echo hi\n", "")
+        # Tamper the approved file on disk, outside the approval flow.
+        (paths.scripts_dir / "s").write_text("malicious\n")
+        with pytest.raises(ScriptIntegrityError):
+            run_script("s", {}, approvals, paths.scripts_dir)
+
+
+# ---------------------------------------------------------------------------
+# TestParamValidation — params must match meta.yaml (task 8.5.5)
+# ---------------------------------------------------------------------------
+
+
+class TestParamValidation:
+    def test_no_meta_no_params_ok(self, tmp_path: Path) -> None:
+        validate_params("s", {}, tmp_path)  # no raise
+
+    def test_no_meta_with_params_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ParamValidationError, match="accepts no parameters"):
+            validate_params("s", {"x": "1"}, tmp_path)
+
+    def test_unknown_param_rejected(self, tmp_path: Path) -> None:
+        _write_meta_dir(tmp_path, "s", {"known": "string"})
+        with pytest.raises(ParamValidationError, match="unknown parameter 'extra'"):
+            validate_params("s", {"known": "v", "extra": "x"}, tmp_path)
+
+    def test_missing_required_rejected(self, tmp_path: Path) -> None:
+        _write_meta_dir(tmp_path, "s", {"need": "string"})
+        with pytest.raises(ParamValidationError, match="missing required parameter 'need'"):
+            validate_params("s", {}, tmp_path)
+
+    def test_wrong_type_rejected(self, tmp_path: Path) -> None:
+        _write_meta_dir(tmp_path, "s", {"n": "int"})
+        with pytest.raises(ParamValidationError, match="must be an integer"):
+            validate_params("s", {"n": "not-a-number"}, tmp_path)
+
+    def test_bool_not_accepted_as_int(self, tmp_path: Path) -> None:
+        _write_meta_dir(tmp_path, "s", {"n": "int"})
+        with pytest.raises(ParamValidationError, match="must be an integer"):
+            validate_params("s", {"n": True}, tmp_path)
+
+    def test_min_max_enforced(self, tmp_path: Path) -> None:
+        (tmp_path / "s.meta.yaml").write_text(
+            "params:\n  - name: n\n    type: int\n    required: true\n    min: 1\n    max: 10\n"
+        )
+        with pytest.raises(ParamValidationError, match=">= 1"):
+            validate_params("s", {"n": 0}, tmp_path)
+        with pytest.raises(ParamValidationError, match="<= 10"):
+            validate_params("s", {"n": 11}, tmp_path)
+
+    def test_choice_enforced(self, tmp_path: Path) -> None:
+        (tmp_path / "s.meta.yaml").write_text(
+            "params:\n  - name: mode\n    type: choice\n    required: true\n    choices: [a, b]\n"
+        )
+        validate_params("s", {"mode": "a"}, tmp_path)  # no raise
+        with pytest.raises(ParamValidationError, match="must be one of"):
+            validate_params("s", {"mode": "z"}, tmp_path)
+
+    def test_valid_params_pass(self, tmp_path: Path) -> None:
+        _write_meta_dir(tmp_path, "s", {"name": "string", "n": "int"})
+        validate_params("s", {"name": "x", "n": 5}, tmp_path)  # no raise
 
 
 # ---------------------------------------------------------------------------
@@ -279,16 +397,19 @@ class TestLinuxExecution:
 
     def test_string_param_via_env(self, approvals: ApprovalsManager, paths: CslPaths) -> None:
         self._sh(approvals, paths, "s", '#!/bin/bash\necho "$CSL_PARAM_NAME"')
+        _write_meta(paths, "s", {"name": "string"})
         assert run_script("s", {"name": "world"}, approvals, paths.scripts_dir).stdout.strip() == (
             "world"
         )
 
     def test_int_param_as_string(self, approvals: ApprovalsManager, paths: CslPaths) -> None:
         self._sh(approvals, paths, "s", '#!/bin/bash\necho "$CSL_PARAM_N"')
+        _write_meta(paths, "s", {"n": "int"})
         assert run_script("s", {"n": 42}, approvals, paths.scripts_dir).stdout.strip() == "42"
 
     def test_multiple_params(self, approvals: ApprovalsManager, paths: CslPaths) -> None:
         self._sh(approvals, paths, "s", '#!/bin/bash\necho "$CSL_PARAM_A $CSL_PARAM_B"')
+        _write_meta(paths, "s", {"a": "string", "b": "string"})
         result = run_script("s", {"a": "hello", "b": "world"}, approvals, paths.scripts_dir)
         assert result.stdout.strip() == "hello world"
 
@@ -342,6 +463,7 @@ class TestWindowsExecutionPS1:
 
     def test_param_via_env_var(self, approvals: ApprovalsManager, paths: CslPaths) -> None:
         self._ps1(approvals, paths, "s", "Write-Host $env:CSL_PARAM_NAME")
+        _write_meta(paths, "s", {"name": "string"})
         assert "world" in run_script("s", {"name": "world"}, approvals, paths.scripts_dir).stdout
 
     def test_timed_out_flag(self, approvals: ApprovalsManager, paths: CslPaths) -> None:
@@ -381,4 +503,5 @@ class TestWindowsExecutionBatch:
 
     def test_param_via_env_var(self, approvals: ApprovalsManager, paths: CslPaths) -> None:
         self._bat(approvals, paths, "s", "@echo off\necho %CSL_PARAM_NAME%")
+        _write_meta(paths, "s", {"name": "string"})
         assert "world" in run_script("s", {"name": "world"}, approvals, paths.scripts_dir).stdout

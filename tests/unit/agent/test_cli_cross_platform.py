@@ -222,7 +222,7 @@ class TestWindowsConfigPaths:
             "control_station_lite.agent.cli.cmd_init.CslPaths.platform_base",
             return_value=tmp_path / ".csl",
         ):
-            _write_config(config_path, "SHA256:abc", 36717)
+            _write_config(config_path, "SHA256:abc", 36717, "tok-abc")
         return yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
     def test_agent_paths_are_absolute(self, tmp_path: Path) -> None:
@@ -256,7 +256,7 @@ class TestWindowsConfigPaths:
                 return_value=tmp_path / ".csl",
             ),
         ):
-            _write_config(config_path, "SHA256:xyz", 36717)
+            _write_config(config_path, "SHA256:xyz", 36717, "tok-xyz")
 
         data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         assert data["agent"]["listen_port"] == 36717

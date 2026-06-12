@@ -34,7 +34,9 @@ from control_station_lite.agent.process_manager import (
     _pid_alive,
     _ReattachedProcess,
 )
+from control_station_lite.agent.script_runner import ScriptIntegrityError
 from control_station_lite.shared.models import JobStatus
+from control_station_lite.shared.platform_info import IS_WINDOWS
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -82,6 +84,13 @@ def _new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _write_string_param_meta(paths: CslPaths, name: str, param: str) -> None:
+    """Write a minimal meta.yaml declaring a single required string param."""
+    (paths.scripts_dir / f"{name}.meta.yaml").write_text(
+        f"params:\n  - name: {param}\n    type: string\n    required: true\n"
+    )
+
+
 # ---------------------------------------------------------------------------
 # TestApprovalEnforcement — cross-platform
 # ---------------------------------------------------------------------------
@@ -112,6 +121,18 @@ class TestApprovalEnforcement:
         md5_v2 = hashlib.md5(b"v2").hexdigest()
         approvals.stage("script", "v2", md5_v2)
         with pytest.raises(ScriptNotApprovedError, match="update_pending"):
+            manager.start("script", {}, _new_uuid())
+
+    def test_tampered_file_raises_integrity_error(
+        self, approvals: ApprovalsManager, paths: CslPaths, manager: ProcessManager
+    ) -> None:
+        # Use a platform-appropriate extension so find_script can locate the
+        # approved file (Windows looks for .ps1/.bat/.cmd, not .sh).
+        ext = ".ps1" if IS_WINDOWS else ".sh"
+        _approve_script(approvals, paths, "script", "#!/bin/bash\nsleep 1\n", ext)
+        # Tamper the approved file on disk, outside the approval flow.
+        (paths.scripts_dir / f"script{ext}").write_text("#!/bin/bash\nmalicious\n")
+        with pytest.raises(ScriptIntegrityError):
             manager.start("script", {}, _new_uuid())
 
 
@@ -280,6 +301,7 @@ class TestStart:
     ) -> None:
         script = "#!/bin/bash\necho $CSL_PARAM_MESSAGE\n"
         _approve_script(approvals, paths, "echo_param", script)
+        _write_string_param_meta(paths, "echo_param", "message")
         job_uuid = _new_uuid()
         manager.start("echo_param", {"message": "hello"}, job_uuid)
         time.sleep(0.3)
@@ -474,6 +496,7 @@ class TestWindowsStart:
     ) -> None:
         script = "Write-Output $env:CSL_PARAM_MESSAGE\r\n"
         _approve_script(approvals, paths, "echo_param", script, ".ps1")
+        _write_string_param_meta(paths, "echo_param", "message")
         job_uuid = _new_uuid()
         manager.start("echo_param", {"message": "hello"}, job_uuid)
         time.sleep(1.0)

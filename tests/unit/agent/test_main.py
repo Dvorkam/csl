@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from control_station_lite.agent.config import AgentConfig, AgentSection
+from control_station_lite.agent.config import AgentConfig, AgentSection, IdentitySection
 from control_station_lite.agent.main import _AGENT_HOST, app
 
 
@@ -47,6 +47,45 @@ def isolated_client(tmp_path: Path) -> TestClient:
     with patch("control_station_lite.agent.main.load_config", return_value=cfg):
         with TestClient(app) as c:
             yield c
+
+
+_TOKEN = "s3cret-agent-token"
+
+
+@pytest.fixture
+def authed_client(tmp_path: Path) -> TestClient:
+    """Client whose agent has an api_token configured (auth enforced)."""
+    cfg = AgentConfig(
+        agent=AgentSection(csl_dir=tmp_path / ".csl"),
+        identity=IdentitySection(api_token=_TOKEN),
+    )
+    with patch("control_station_lite.agent.main.load_config", return_value=cfg):
+        with TestClient(app) as c:
+            yield c
+
+
+class TestBearerTokenAuth:
+    def test_missing_token_is_401(self, authed_client: TestClient) -> None:
+        assert authed_client.get("/healthz").status_code == 401
+
+    def test_wrong_token_is_401(self, authed_client: TestClient) -> None:
+        resp = authed_client.get("/healthz", headers={"Authorization": "Bearer nope"})
+        assert resp.status_code == 401
+
+    def test_malformed_header_is_401(self, authed_client: TestClient) -> None:
+        resp = authed_client.get("/healthz", headers={"Authorization": _TOKEN})
+        assert resp.status_code == 401
+
+    def test_correct_token_is_200(self, authed_client: TestClient) -> None:
+        resp = authed_client.get("/healthz", headers={"Authorization": f"Bearer {_TOKEN}"})
+        assert resp.status_code == 200
+
+    def test_enforced_on_non_health_endpoint(self, authed_client: TestClient) -> None:
+        assert authed_client.get("/scripts/foo/state").status_code == 401
+
+    def test_no_token_configured_allows_request(self, isolated_client: TestClient) -> None:
+        # Legacy config with no api_token runs unauthenticated.
+        assert isolated_client.get("/healthz").status_code == 200
 
 
 class TestScriptStateEndpoint:
@@ -96,6 +135,45 @@ class TestSubmitJobEndpoint:
             json={"job_uuid": "abc-123", "script_name": "not_approved"},
         )
         assert resp.status_code == 403
+
+    def test_expected_md5_mismatch_returns_409(self, isolated_client: TestClient) -> None:
+        _stage_and_approve(isolated_client, "drifter", "#!/bin/bash\necho ok\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u2", "script_name": "drifter", "expected_md5": "deadbeef"},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["approval_error"] == "md5_mismatch"
+
+    def test_unexpected_params_returns_422(self, isolated_client: TestClient) -> None:
+        # Script has no meta.yaml, so it accepts no parameters.
+        _stage_and_approve(isolated_client, "noparams", "#!/bin/bash\necho ok\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u4", "script_name": "noparams", "params": {"x": "1"}},
+        )
+        assert resp.status_code == 422
+        assert "validation_error" in resp.json()["detail"]
+
+    def test_tampered_script_returns_409_integrity(self, isolated_client: TestClient) -> None:
+        _stage_and_approve(isolated_client, "tamper", "#!/bin/bash\necho ok\n")
+        paths = isolated_client.app.state.config.agent.to_csl_paths()
+        (paths.scripts_dir / "tamper").write_text("malicious\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u3", "script_name": "tamper"},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["approval_error"] == "integrity"
+
+    @pytest.mark.linux_only
+    def test_expected_md5_match_runs(self, isolated_client: TestClient) -> None:
+        md5 = _stage_and_approve(isolated_client, "matcher", "#!/bin/bash\necho ok\n")
+        resp = isolated_client.post(
+            "/jobs",
+            json={"job_uuid": "u1", "script_name": "matcher", "expected_md5": md5},
+        )
+        assert resp.status_code == 202
 
     @pytest.mark.linux_only
     def test_non_persistent_job_writes_log_file(

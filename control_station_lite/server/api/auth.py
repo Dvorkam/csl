@@ -24,6 +24,7 @@ from control_station_lite.server.auth.jwt import (
     decode_refresh_token,
 )
 from control_station_lite.server.auth.password import verify_password
+from control_station_lite.server.config import get_settings
 from control_station_lite.server.db.models import RefreshToken, User
 from control_station_lite.server.db.session import get_session
 
@@ -62,14 +63,19 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         key=_REFRESH_COOKIE,
         value=token,
         httponly=True,
-        secure=True,
+        secure=get_settings().cookie_secure,
         samesite="strict",
         max_age=_COOKIE_MAX_AGE,
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(key=_REFRESH_COOKIE, httponly=True, secure=True, samesite="strict")
+    response.delete_cookie(
+        key=_REFRESH_COOKIE,
+        httponly=True,
+        secure=get_settings().cookie_secure,
+        samesite="strict",
+    )
 
 
 async def _store_refresh_token(session: AsyncSession, user_id: int, jti: str, token: str) -> None:

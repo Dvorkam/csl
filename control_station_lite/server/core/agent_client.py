@@ -16,6 +16,8 @@ from collections.abc import AsyncGenerator
 import asyncssh
 import httpx
 
+from control_station_lite.server.config import get_settings
+from control_station_lite.server.core.crypto import decrypt
 from control_station_lite.server.core.ssh import SSHConnectionPool
 from control_station_lite.server.db.models import Machine
 from control_station_lite.shared.models import (
@@ -26,16 +28,9 @@ from control_station_lite.shared.models import (
     StageScriptRequest,
     StageScriptResponse,
 )
+from control_station_lite.shared.ssh_commands import WAKEUP_CMD
 
 logger = logging.getLogger(__name__)
-
-# Platform-appropriate one-shot service-start commands. Each exits immediately
-# after signalling the OS to start the agent; the OS owns the process.
-_WAKEUP_CMD: dict[str, str] = {
-    "linux": "systemctl --user start csl-agent",
-    "windows": 'schtasks /run /tn "CSL-Agent"',
-    "macos": 'launchctl kickstart "gui/$UID/com.controlstationlite.agent"',
-}
 
 # Delays between /healthz retries after the start command is issued (~5 s total).
 _WAKEUP_BACKOFF = (0.5, 1.0, 1.5, 2.0)
@@ -47,6 +42,23 @@ class AgentClientError(Exception):
 
 class AgentNotReachableError(AgentClientError):
     """Raised when the agent did not become healthy after the start command."""
+
+
+class AgentApprovalError(AgentClientError):
+    """Raised when the agent refuses a job for an approval/integrity reason (409).
+
+    Carries the agent's reported state so the caller can re-sync and surface the
+    same UX as a pending-approval response.
+    """
+
+    def __init__(self, agent_state: str, approval_error: str, detail: str) -> None:
+        super().__init__(detail)
+        self.agent_state = agent_state
+        self.approval_error = approval_error
+
+
+class AgentValidationError(AgentClientError):
+    """Raised when the agent rejects a job's parameters (HTTP 422)."""
 
 
 class AgentClient:
@@ -97,6 +109,7 @@ class AgentClient:
             self._private_key,
             "127.0.0.1",
             self._machine.agent_port,
+            host_key=self._machine.ssh_host_key,
         )
         if self._http_client_override is not None:
             self._http = self._http_client_override
@@ -104,8 +117,17 @@ class AgentClient:
             self._http = httpx.AsyncClient(
                 base_url=f"http://127.0.0.1:{self._local_port}",
                 timeout=30.0,
+                headers=self._auth_headers(),
             )
         return self
+
+    def _auth_headers(self) -> dict[str, str]:
+        """Bearer-token header for the agent API, or empty for legacy machines."""
+        enc = self._machine.agent_token_encrypted
+        if not enc:
+            return {}
+        token = decrypt(enc, get_settings().read_master_key()).decode()
+        return {"Authorization": f"Bearer {token}"}
 
     async def __aexit__(self, *_: object) -> None:
         if self._http is not None and self._http_client_override is None:
@@ -129,7 +151,7 @@ class AgentClient:
         if await self._is_healthy():
             return
 
-        cmd = _WAKEUP_CMD.get(self._machine.platform)
+        cmd = WAKEUP_CMD.get(self._machine.platform)
         if cmd is None:
             raise AgentClientError(f"No start command for platform {self._machine.platform!r}")
 
@@ -138,6 +160,7 @@ class AgentClient:
             self._machine.ssh_port,
             self._machine.ssh_user,
             self._private_key,
+            host_key=self._machine.ssh_host_key,
         )
         await conn.run(cmd, check=False)
         logger.info(
@@ -190,6 +213,18 @@ class AgentClient:
     async def submit_job(self, request: JobRequest) -> JobStatusResponse:
         assert self._http is not None
         resp = await self._http.post("/jobs", json=request.model_dump())
+        if resp.status_code == 409:
+            detail = resp.json().get("detail")
+            if isinstance(detail, dict) and "approval_error" in detail:
+                raise AgentApprovalError(
+                    agent_state=detail.get("agent_state", ""),
+                    approval_error=detail["approval_error"],
+                    detail=detail.get("detail", "agent refused the job"),
+                )
+        if resp.status_code == 422:
+            detail = resp.json().get("detail")
+            if isinstance(detail, dict) and "validation_error" in detail:
+                raise AgentValidationError(detail["validation_error"])
         resp.raise_for_status()
         return JobStatusResponse.model_validate(resp.json())
 

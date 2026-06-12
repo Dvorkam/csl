@@ -13,13 +13,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from control_station_lite.server.api.machines import _host_key_fingerprint, _ssh_connection_test
 from control_station_lite.server.auth.jwt import create_access_token
 from control_station_lite.server.auth.password import hash_password
 from control_station_lite.server.core.crypto import encrypt
 from control_station_lite.server.db.models import Base, Machine, User
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.main import app
-from control_station_lite.shared.registration import encode_bundle
+from control_station_lite.shared.registration import RegistrationBundle, encode_bundle
 
 _BUNDLE_KWARGS = {
     "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nFAKE\n-----END OPENSSH PRIVATE KEY-----\n",
@@ -29,6 +30,7 @@ _BUNDLE_KWARGS = {
     "hostname_hint": "my-pc",
     "platform": "linux",
     "ssh_user": "alice",
+    "api_token": "agent-token-xyz",
 }
 
 
@@ -136,12 +138,68 @@ def _user_h(u: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token(u.id, 'user')}"}
 
 
+# A valid OpenSSH ed25519 host-key line, as _ssh_connection_test returns on success.
+_SAMPLE_HOST_KEY = (
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMBCOclB5ZfmeQZkZ3042IRzIRL+4bLlhcHNhsVq5Qkr"
+)
+
+
 def _no_op_connection_test() -> MagicMock:
-    """Patch _ssh_connection_test to do nothing (successful connection)."""
+    """Patch _ssh_connection_test to succeed and return a captured host key."""
     return patch(
         "control_station_lite.server.api.machines._ssh_connection_test",
         new_callable=AsyncMock,
+        return_value=_SAMPLE_HOST_KEY,
     )
+
+
+# ---------------------------------------------------------------------------
+# Host-key capture in _ssh_connection_test (TOFU)
+# ---------------------------------------------------------------------------
+
+
+class TestSshConnectionTestCapturesHostKey:
+    async def test_returns_host_key_line(self) -> None:
+        bundle = RegistrationBundle.decode(encode_bundle(**_BUNDLE_KWARGS))
+
+        host_key_obj = MagicMock()
+        host_key_obj.export_public_key.return_value = (_SAMPLE_HOST_KEY + "\n").encode()
+        run_result = MagicMock()
+        run_result.stdout = "identity:\n  key_fingerprint: SHA256:abc123\n"
+
+        conn = MagicMock()
+        conn.__aenter__ = AsyncMock(return_value=conn)
+        conn.__aexit__ = AsyncMock(return_value=False)
+        conn.get_server_host_key = MagicMock(return_value=host_key_obj)
+        conn.run = AsyncMock(return_value=run_result)
+
+        with (
+            patch("control_station_lite.server.api.machines.asyncssh.connect", return_value=conn),
+            patch(
+                "control_station_lite.server.api.machines.asyncssh.import_private_key",
+                return_value=MagicMock(),
+            ),
+        ):
+            host_key = await _ssh_connection_test(bundle, "alice", "192.168.1.100", 22)
+
+        assert host_key == _SAMPLE_HOST_KEY
+
+    async def test_raises_when_host_key_unavailable(self) -> None:
+        bundle = RegistrationBundle.decode(encode_bundle(**_BUNDLE_KWARGS))
+        conn = MagicMock()
+        conn.__aenter__ = AsyncMock(return_value=conn)
+        conn.__aexit__ = AsyncMock(return_value=False)
+        conn.get_server_host_key = MagicMock(return_value=None)
+
+        with (
+            patch("control_station_lite.server.api.machines.asyncssh.connect", return_value=conn),
+            patch(
+                "control_station_lite.server.api.machines.asyncssh.import_private_key",
+                return_value=MagicMock(),
+            ),
+            pytest.raises(ValueError, match="host key"),
+        ):
+            await _ssh_connection_test(bundle, "alice", "192.168.1.100", 22)
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +266,21 @@ class TestRegisterMachine:
         assert data["key_fingerprint"] == _BUNDLE_KWARGS["key_fingerprint"]
         assert data["agent_port"] == _BUNDLE_KWARGS["agent_port"]
         assert data["ssh_user"] == _BUNDLE_KWARGS["ssh_user"]  # "alice" from bundle
+
+    def test_response_includes_host_key_fingerprint(
+        self, client: TestClient, admin_user: User
+    ) -> None:
+        bundle = encode_bundle(**_BUNDLE_KWARGS)
+        with _no_op_connection_test():
+            resp = client.post(
+                "/api/machines",
+                json={"bundle": bundle, "name": "pinned", "ssh_host": "192.168.1.100"},
+                headers=_admin_h(admin_user),
+            )
+        assert resp.status_code == 201
+        assert resp.json()["ssh_host_key_fingerprint"] == _host_key_fingerprint(_SAMPLE_HOST_KEY)
+        # The raw key line is captured but not serialised in the response.
+        assert "ssh_host_key" not in resp.json()
 
     def test_ssh_user_override_takes_precedence(self, client: TestClient, admin_user: User) -> None:
         bundle = encode_bundle(**_BUNDLE_KWARGS)

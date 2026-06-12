@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from control_station_lite.server.core.ssh import SSHConnectionPool, get_ssh_pool
+from control_station_lite.server.core.ssh import (
+    SSHConnectionPool,
+    build_known_hosts,
+    get_ssh_pool,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -15,6 +19,24 @@ _HOST = "192.168.1.10"
 _PORT = 22
 _USER = "alice"
 _KEY = os.urandom(32)  # not a real key — asyncssh.connect is mocked
+_SAMPLE_HOST_KEY = (
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMBCOclB5ZfmeQZkZ3042IRzIRL+4bLlhcHNhsVq5Qkr"
+)
+
+
+# ---------------------------------------------------------------------------
+# build_known_hosts
+# ---------------------------------------------------------------------------
+
+
+def test_build_known_hosts_none_returns_none() -> None:
+    assert build_known_hosts(None) is None
+    assert build_known_hosts("") is None
+
+
+def test_build_known_hosts_pins_key() -> None:
+    result = build_known_hosts(_SAMPLE_HOST_KEY)
+    assert result is not None
 
 
 def _make_conn(closing: bool = False) -> MagicMock:
@@ -121,6 +143,24 @@ async def test_get_connection_known_hosts_none(mock_connect, pool: SSHConnection
     await pool.get_connection(_HOST, _PORT, _USER, _KEY)
     _, kwargs = mock_fn.call_args
     assert kwargs["known_hosts"] is None
+
+
+async def test_get_connection_pins_host_key(mock_connect, pool: SSHConnectionPool) -> None:
+    mock_fn, _ = mock_connect
+    await pool.get_connection(_HOST, _PORT, _USER, _KEY, host_key=_SAMPLE_HOST_KEY)
+    _, kwargs = mock_fn.call_args
+    # A pinned key produces an SSHKnownHosts object rather than None.
+    assert kwargs["known_hosts"] is not None
+
+
+async def test_open_tunnel_threads_host_key(pool: SSHConnectionPool) -> None:
+    conn = _make_conn()
+    conn.forward_local_port = AsyncMock(return_value=_make_listener())
+    with patch.object(pool, "get_connection", AsyncMock(return_value=conn)) as mock_get:
+        await pool.open_tunnel(
+            _HOST, _PORT, _USER, _KEY, "127.0.0.1", 36717, host_key=_SAMPLE_HOST_KEY
+        )
+    assert mock_get.call_args.kwargs["host_key"] == _SAMPLE_HOST_KEY
 
 
 # ---------------------------------------------------------------------------

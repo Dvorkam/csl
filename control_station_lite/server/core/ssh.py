@@ -22,6 +22,20 @@ logger = logging.getLogger(__name__)
 _ConnKey = tuple[str, int, str]
 
 
+def build_known_hosts(host_key: str | None) -> object | None:
+    """Return an asyncssh ``known_hosts`` value that pins *host_key*.
+
+    *host_key* is a stored OpenSSH public-key line (e.g. ``ssh-ed25519 AAAA…``).
+    The ``*`` host pattern pins the key itself regardless of how the host
+    resolves, which is exactly the property we want: the server we dialled must
+    present this key or the connection fails. Returns ``None`` (trust-on-first-
+    use) only for legacy machines with no pinned key.
+    """
+    if not host_key:
+        return None
+    return asyncssh.import_known_hosts(f"* {host_key.strip()}\n")
+
+
 @dataclass
 class _Entry:
     conn: asyncssh.SSHClientConnection
@@ -35,9 +49,10 @@ class SSHConnectionPool:
     the remote agent shut down or the network dropped). Tunnels opened on a
     connection are tracked so they can be closed cleanly via :meth:`close`.
 
-    Note: ``known_hosts=None`` trusts any host key. Per-registration fingerprint
-    verification is the responsibility of the caller (``agent_client.py`` checks
-    the ``Machine.key_fingerprint`` field before trusting a new connection).
+    Note: callers pass the machine's pinned ``host_key`` so the server's host
+    key is validated on connect (fail closed on mismatch). Only legacy machines
+    registered before host-key pinning pass ``host_key=None`` (trust-on-first-
+    use), which should be resolved by re-registering them.
     """
 
     def __init__(self) -> None:
@@ -51,9 +66,14 @@ class SSHConnectionPool:
         username: str,
         private_key: bytes,
         *,
+        host_key: str | None = None,
         connect_timeout: float = 10.0,
     ) -> asyncssh.SSHClientConnection:
-        """Return an open connection, opening a new one if necessary."""
+        """Return an open connection, opening a new one if necessary.
+
+        When *host_key* is supplied the server's host key is validated against
+        it; a mismatch raises :class:`asyncssh.Error` (fail closed).
+        """
         key = (host, port, username)
         async with self._lock:
             entry = self._pool.get(key)
@@ -64,7 +84,7 @@ class SSHConnectionPool:
                 port=port,
                 username=username,
                 client_keys=[asyncssh.import_private_key(private_key)],
-                known_hosts=None,
+                known_hosts=build_known_hosts(host_key),
                 connect_timeout=connect_timeout,
             )
             self._pool[key] = _Entry(conn=conn)
@@ -80,6 +100,7 @@ class SSHConnectionPool:
         remote_host: str,
         remote_port: int,
         *,
+        host_key: str | None = None,
         local_host: str = "127.0.0.1",
     ) -> tuple[asyncssh.SSHListener, int]:
         """Forward a random local port to *remote_host*:*remote_port* over SSH.
@@ -88,7 +109,7 @@ class SSHConnectionPool:
         listener when the tunnel is no longer needed; :meth:`close` also
         closes all listeners associated with a connection.
         """
-        conn = await self.get_connection(host, port, username, private_key)
+        conn = await self.get_connection(host, port, username, private_key, host_key=host_key)
         listener = await conn.forward_local_port(local_host, 0, remote_host, remote_port)
         local_port = listener.get_port()
         key = (host, port, username)

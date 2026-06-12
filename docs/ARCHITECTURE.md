@@ -103,20 +103,21 @@ Performed by the target owner and the control station admin together.
 2. Target owner runs `csl-agent init`. This command:
    - Creates the folder structure under `~/.csl/` (or platform equivalent).
    - Generates an SSH keypair dedicated to control station use.
-   - Adds the public key to `~/.ssh/authorized_keys`, optionally with a `command=` restriction.
+   - Adds the public key to `~/.ssh/authorized_keys` with a **forced-command restriction**: `command="csl-agent ssh-gateway",restrict,port-forwarding,permitopen="127.0.0.1:<agent_port>"`. The key can therefore only forward to the agent port and run the small allowlist of commands the gateway permits — never a shell (see §7.4). Re-running `init` upgrades an older unrestricted entry in place.
+   - Generates an **agent API token** (`secrets.token_urlsafe(32)`, reused across re-runs) and stores it in the config.
    - Writes the agent config to the platform's app-data directory (see section 6.2).
-   - Prints a **registration bundle** once: the private key plus connection metadata, base64-encoded as a single string.
+   - Prints a **registration bundle** once: the private key, the API token, plus connection metadata, base64-encoded as a single string.
 3. Target owner sends the registration bundle to the control station admin through any secure channel.
 
 **Control station side:**
 
 4. Admin opens the "Add Machine" form, pastes the registration bundle, supplies a friendly name and the target's SSH host/port. The bundle includes the SSH username used by `csl-agent init` (`getpass.getuser()`). The admin may override this if they need to connect as a different account (e.g. `root`).
 5. Control station decodes the bundle, performs a one-time connection test:
-   - Opens an SSH session using the bundle's private key and the admin-supplied username.
+   - Opens an SSH session using the bundle's private key and the admin-supplied username. This is the single trust-on-first-use point (`known_hosts=None`); the server's **SSH host key is captured here and pinned** on the machine record. All later connections validate against it and fail closed on mismatch (§7.3).
    - Runs `cat ~/.csl/config.yaml` (or platform equivalent) as a short-lived exec command.
    - Parses the returned YAML and verifies that `identity.key_fingerprint` matches the `key_fingerprint` field in the bundle.
    - On mismatch or SSH failure the operation is aborted and no record is written.
-   Stores the machine record in SQLite only after the test succeeds. The private key is encrypted at rest with AES-256-GCM using the control station's master key.
+   Stores the machine record in SQLite only after the test succeeds. The private key and the agent API token are encrypted at rest with AES-256-GCM using the control station's master key. The captured host-key fingerprint is returned so the admin can confirm it out-of-band.
 
 ### 3.2 Running a script on a machine
 
@@ -124,15 +125,15 @@ All script execution — one-off or persistent, trivial or complex — goes thro
 
 1. User requests action via the web UI.
 2. Control station looks up the machine record (host, port, key, agent port, scripts dir, platform).
-3. Control station opens an SSH connection with a local port forward to the agent (`-L localport:127.0.0.1:agentport`).
+3. Control station opens an SSH connection with a local port forward to the agent (`-L localport:127.0.0.1:agentport`). The connection validates the pinned host key (§7.3). Every HTTP request through the tunnel carries the agent API token as `Authorization: Bearer` (§7.1).
 4. Control station pings the agent's `/healthz` through the tunnel.
 5. If the agent does not respond within the connection timeout, the control station issues the platform-appropriate service-start command in a short-lived SSH exec session:
    - Linux: `systemctl --user start csl-agent`
    - Windows: `schtasks /run /tn "CSL-Agent"`
    - macOS: `launchctl kickstart gui/$UID/com.controlstationlite.agent`
    This SSH session exits immediately; the OS takes responsibility for the agent process. The control station then polls `/healthz` through the tunnel with exponential backoff (up to ~5 seconds total).
-6. Once the agent is reachable, the control station resolves the script's approval state (see §3.3) and then submits the job: `POST /jobs` to the agent with script name, parameters, and a generated `job_uuid`.
-7. Agent validates the request (script is approved, parameters match metadata), starts the process, and returns the job ID.
+6. Once the agent is reachable, the control station resolves the script's approval state (see §3.3) and then submits the job: `POST /jobs` to the agent with script name, parameters, a generated `job_uuid`, and the `expected_md5` it believes is approved.
+7. Agent validates the request — script is approved, the on-disk script's MD5 matches the approved MD5 (and the request's `expected_md5`), and parameters match the metadata — then starts the process and returns the job ID. A mismatch or invalid parameter is refused with a structured error rather than run.
 8. For persistent jobs, the UI subscribes to `/jobs/{id}/stream` (SSE), which the control station proxies from the agent.
 
 ### 3.3 Script lifecycle and approval
@@ -310,6 +311,8 @@ SQLite database, single file, managed by SQLAlchemy with Alembic migrations.
 | ssh_user | TEXT | |
 | ssh_key_encrypted | BLOB | encrypted with master key |
 | key_fingerprint | TEXT | from registration bundle |
+| ssh_host_key | TEXT NULLABLE | pinned SSH host key (OpenSSH line), captured at registration |
+| agent_token_encrypted | BLOB NULLABLE | agent API bearer token, encrypted with master key |
 | agent_port | INTEGER | from agent config |
 | scripts_dir | TEXT | path on target |
 | platform | TEXT | `linux` \| `windows` \| `macos`; from registration bundle |
@@ -478,6 +481,7 @@ agent:
 identity:
   key_fingerprint: "SHA256:..."
   hostname_hint: "my-gaming-pc"
+  api_token: "<secrets.token_urlsafe(32)>"   # bearer token the control station must present
 
 approval_policy:
   # Scripts in this list are auto-approved for both first install and updates.
@@ -538,12 +542,13 @@ advanced:
 
 ### 7.1 Authentication
 
-- Passwords hashed with bcrypt (`passlib`).
+- **User auth:** passwords hashed with bcrypt (the `bcrypt` package directly; `passlib` was dropped as incompatible).
 - JWT access tokens, 30-minute lifetime, signed with HS256 using a key from `secrets/jwt.key`.
-- JWT refresh tokens, 14-day lifetime, stored in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie. Each refresh token has a unique JTI; its hash is stored in `refresh_tokens` to support revocation.
+- JWT refresh tokens, 14-day lifetime, stored in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The `Secure` flag is config-driven (`CSL_COOKIE_SECURE`, default on; set off only for plain-HTTP localhost dev). Each refresh token has a unique JTI; its hash is stored in `refresh_tokens` to support revocation.
 - Access tokens carry `sub` (user id), `role`, and `exp`.
 - Token rotation: a successful refresh issues a new access token AND a new refresh token; the old refresh token is marked revoked.
 - Rate limiting on `/login` and `/refresh` (enforced at nginx).
+- **Agent API auth:** the agent requires a bearer token (`Authorization: Bearer`) on every endpoint including `/healthz`, compared in constant time. The token is generated at `csl-agent init`, carried in the registration bundle, and stored encrypted on the control station. (An agent with no token configured runs unauthenticated with a startup warning — only reachable transitionally before re-init, since the agent binds to loopback behind the SSH tunnel.)
 
 ### 7.2 Authorization
 
@@ -558,14 +563,15 @@ Role checked via FastAPI dependency on every protected route. Admin-only routes 
 
 - nginx terminates TLS using user-supplied certificates. The user is free to use self-signed, Let's Encrypt, or an internal CA. No coupling to any cert provider.
 - All control-station-to-agent traffic travels through SSH-tunneled connections. The agent never listens on a network-routable interface.
+- **SSH host-key pinning:** the target's host key is captured trust-on-first-use during registration and stored on the machine record. Every subsequent connection validates the presented host key against the pinned one and fails closed on mismatch, so a man-in-the-middle on the SSH path is detected. (Legacy machines with no pinned key fall back to trust-on-first-use with a warning until re-registered.)
 
 ### 7.4 Target machine autonomy
 
 The target machine is a fully sovereign participant in the system. The target owner controls four layers of access independently:
 
 - **Authentication:** the control station authenticates to a target using exactly one SSH key, dedicated to it. The target owner controls `authorized_keys` and can revoke at any time.
-- **Protocol surface:** the only thing the control station's SSH key can reach is the agent service (started via systemd/Task Scheduler) and the agent's API. There is no general shell execution path. Tightening `authorized_keys` with a `command=` restriction is possible but not required for security; the agent's API is the only thing that's actually exposed.
-- **Code:** no script can run without an explicit approval recorded in `~/.csl/agent/approvals.json`. Approval is bound to a specific MD5 — any change to a script revokes its approval and requires re-approval. The target owner reviews, approves, rejects, or removes scripts via `csl-agent approvals` commands.
+- **Protocol surface:** the control station's SSH key is pinned to a **forced command** (`command="csl-agent ssh-gateway",restrict,port-forwarding,permitopen="127.0.0.1:<agent_port>"`). The key can only forward to the agent's loopback port and run the small allowlist the `ssh-gateway` subcommand permits (the platform service-start command and the one-time config read); any other command — including an interactive shell — is refused. There is no general shell execution path. This restriction is applied by default at `csl-agent init`, not optional.
+- **Code:** no script can run without an explicit approval recorded in `~/.csl/agent/approvals.json`. Approval is bound to a specific MD5, enforced both at approval time and at run time — the agent re-hashes the on-disk script before every execution and refuses if it no longer matches the approved MD5. The target owner reviews, approves, rejects, or removes scripts via `csl-agent approvals` commands.
 - **Footprint:** the target owner can wipe `~/.csl/` to permanently remove the control station's footprint. They can also disable the systemd service / Task Scheduler task to make the agent unstartable.
 
 This means three different actions are needed for an attacker who has compromised the control station to gain meaningful access to a given target: (1) hold the SSH key, (2) succeed in submitting a script to the agent, and (3) have that script be either pre-approved or whitelisted for auto-approval. A target owner who carefully reviews each approval has a strong veto even against a fully compromised control station.
@@ -640,8 +646,9 @@ dependencies = [
 server = [
   "sqlalchemy",
   "alembic",
-  "passlib[bcrypt]",
+  "bcrypt",
   "python-jose[cryptography]",
+  "python-multipart",
   "asyncssh",
   "jinja2",
   "cryptography",

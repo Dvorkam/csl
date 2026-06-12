@@ -26,6 +26,7 @@ from control_station_lite.server.auth.jwt import (
     decode_refresh_token,
 )
 from control_station_lite.server.auth.password import verify_password
+from control_station_lite.server.config import get_settings
 from control_station_lite.server.db.models import RefreshToken, User
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.web import templates
@@ -57,11 +58,12 @@ async def _store_refresh_token(session: AsyncSession, user_id: int, jti: str) ->
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    secure = get_settings().cookie_secure
     response.set_cookie(
         key=_ACCESS_COOKIE,
         value=access_token,
         httponly=True,
-        secure=False,  # allow HTTP in dev; production runs behind nginx with HTTPS
+        secure=secure,
         samesite="strict",
         max_age=_ACCESS_MAX_AGE,
     )
@@ -69,7 +71,7 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         key=_REFRESH_COOKIE,
         value=refresh_token,
         httponly=True,
-        secure=False,
+        secure=secure,
         samesite="strict",
         max_age=_COOKIE_MAX_AGE,
     )

@@ -109,9 +109,13 @@ class AgentSection(BaseModel):
 class IdentitySection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Both fields are absent until `csl-agent init` has run.
+    # All fields are absent until `csl-agent init` has run.
     key_fingerprint: str | None = None
     hostname_hint: str | None = None
+    # Shared secret the control station must present as a bearer token on every
+    # agent request. Absent on pre-8.5.3 configs (agent then runs unauthenticated
+    # with a startup warning — re-run `csl-agent init` to secure it).
+    api_token: str | None = None
 
 
 class ApprovalPolicySection(BaseModel):
