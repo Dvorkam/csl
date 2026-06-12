@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from control_station_lite.server.auth.dependencies import current_user, require_admin
+from control_station_lite.server.core.audit import record_audit
 from control_station_lite.server.core.script_registry import (
     ScriptRegistryError,
     create_script,
@@ -100,6 +101,16 @@ async def create_script_endpoint(
             user_id=admin.id,
             session=session,
         )
+        await session.flush()
+        await record_audit(
+            session,
+            action="script.create",
+            target_type="script",
+            target_id=script.name,
+            result="success",
+            user_id=admin.id,
+            details={"md5": script.md5},
+        )
         await session.commit()
         await session.refresh(script)
         return script
@@ -122,6 +133,16 @@ async def update_script_endpoint(
             user_id=admin.id,
             session=session,
         )
+        await session.flush()
+        await record_audit(
+            session,
+            action="script.update",
+            target_type="script",
+            target_id=script.name,
+            result="success",
+            user_id=admin.id,
+            details={"md5": script.md5},
+        )
         await session.commit()
         await session.refresh(script)
         return script
@@ -137,11 +158,19 @@ async def update_script_endpoint(
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_script_endpoint(
     name: str,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     try:
         await delete_script(name, session)
+        await record_audit(
+            session,
+            action="script.delete",
+            target_type="script",
+            target_id=name,
+            result="success",
+            user_id=admin.id,
+        )
         await session.commit()
     except ScriptRegistryError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

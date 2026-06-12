@@ -32,6 +32,7 @@ from control_station_lite.server.core.agent_client import (
     AgentClientError,
     AgentValidationError,
 )
+from control_station_lite.server.core.audit import record_audit
 from control_station_lite.server.core.crypto import decrypt
 from control_station_lite.server.core.script_registry import (
     ScriptRegistryError,
@@ -160,6 +161,16 @@ async def submit_job(
         await session.commit()
 
         if resolved != ApprovalState.approved:
+            await record_audit(
+                session,
+                action="job.submit",
+                target_type="machine",
+                target_id=machine_id,
+                result="rejected",
+                user_id=user.id,
+                details={"script": body.script_name, "agent_state": str(resolved)},
+                commit=True,
+            )
             raise _approval_error_response(resolved, body.script_name)
 
         request = JobRequest(
@@ -199,6 +210,19 @@ async def submit_job(
         exit_code=agent_resp.exit_code,
     )
     session.add(job)
+    await record_audit(
+        session,
+        action="job.submit",
+        target_type="job",
+        target_id=job_id,
+        result="success",
+        user_id=user.id,
+        details={
+            "machine_id": machine_id,
+            "script": body.script_name,
+            "persistent": script.persistent,
+        },
+    )
     await session.commit()
     await session.refresh(job)
     return job
@@ -280,6 +304,15 @@ async def kill_job(
 
     job.status = JobStatus.killed
     job.ended_at = datetime.utcnow()
+    await record_audit(
+        session,
+        action="job.kill",
+        target_type="job",
+        target_id=job_uuid,
+        result="success",
+        user_id=user.id,
+        details={"machine_id": job.machine_id},
+    )
     await session.commit()
 
 

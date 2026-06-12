@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 8.5 complete.** Next: **Phase 9** — audit log API + observability (see TASKS.md 9.1–9.6).
+**Phase 9 in progress** (branch `feature/phase-9-audit-observability`). 9.1–9.3 done. Next: **9.4–9.6** — structured JSON logging, correlation IDs, stable error codes.
 
 ## Up next
 
-**9.1–9.3** — `server/api/audit.py` admin read API, audit decorator/helper for all state-mutating endpoints, route-table coverage guard test. Then **9.4–9.6** (JSON logging, correlation IDs, error codes). Consider opening a PR for the phase-8.5 branch first.
+**9.4** structured JSON logging to stdout (one object/line), **9.5** correlation IDs (request-id middleware, propagated to agent calls), **9.6** stable error-code catalogue with structured error responses.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 9.1–9.3 | Audit log API + instrumentation. New `server/core/audit.py` `record_audit` helper (flush-by-default, `commit=True` on failure paths); instrumented auth (login success/failure, logout), machines (register, delete, bookmark, unbookmark), scripts (create, update, delete), jobs (submit success + rejected, kill); `builtin.wol` refactored onto the helper. `server/api/audit.py` admin-only `GET /api/audit` with action/target_type/username filters + offset/limit pagination (`AuditPageOut`). Guard test `test_audit_coverage.py` walks the route table asserting every mutating in-schema route calls `record_audit` (exempt allowlist: `POST /api/auth/refresh`). 4 helper unit + 14 integration tests. | branch `feature/phase-9-audit-observability` |
 | 8.5.7 | ARCHITECTURE.md updated to match the phase: §3.1/§3.2 (forced-command key, captured host key, bundle carries API token, job `expected_md5`, bearer on every agent request), §6.2 (`identity.api_token`), §5.1 (`ssh_host_key` + `agent_token_encrypted` columns), §7.1 (bcrypt direct + agent bearer auth + config-driven cookie Secure), §7.3 (host-key pinning), §7.4 (forced-command-backed "no shell" claim + run-time MD5 binding), §9.1 (pyproject excerpt: bcrypt/python-multipart). | branch `feature/phase-8.5-security-hardening` |
 | 8.5.6 | Cookie `secure` flag config-driven. New `Settings.cookie_secure` (env `CSL_COOKIE_SECURE`, default `true`); both `api/auth.py` (refresh cookie) and `web/auth.py` (access+refresh cookies) honour it; `.env.example` documents the dev `false` override. 4 new tests. | branch `feature/phase-8.5-security-hardening` |
 | 8.5.5 | Agent-side parameter validation. `script_runner.validate_params` checks job params against the approved script's `.meta.yaml` before exec (unknown params, missing required, type/min/max/choices; bool rejected as int); a script with no meta accepts no params. Wired into `run_script` and `process_manager.start`; agent `/jobs` returns structured 422 (`validation_error`). `AgentClient` raises `AgentValidationError`; jobs endpoint maps it to 422. Makes ARCHITECTURE §3.2 step 7 true. 17 new tests. | branch `feature/phase-8.5-security-hardening` |

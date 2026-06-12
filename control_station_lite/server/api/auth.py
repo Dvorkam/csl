@@ -25,6 +25,7 @@ from control_station_lite.server.auth.jwt import (
 )
 from control_station_lite.server.auth.password import verify_password
 from control_station_lite.server.config import get_settings
+from control_station_lite.server.core.audit import record_audit
 from control_station_lite.server.db.models import RefreshToken, User
 from control_station_lite.server.db.session import get_session
 
@@ -129,6 +130,16 @@ async def login(
     result = await session.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
     if user is None or user.disabled or not verify_password(body.password, user.password_hash):
+        await record_audit(
+            session,
+            action="auth.login",
+            target_type="user",
+            target_id=user.id if user is not None else None,
+            result="failure",
+            user_id=user.id if user is not None else None,
+            details={"username": body.username},
+            commit=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -136,6 +147,15 @@ async def login(
     access_token = create_access_token(user.id, user.role)
     refresh_token, jti = create_refresh_token(user.id)
     await _store_refresh_token(session, user.id, jti, refresh_token)
+    await record_audit(
+        session,
+        action="auth.login",
+        target_type="user",
+        target_id=user.id,
+        result="success",
+        user_id=user.id,
+        details={"username": user.username},
+    )
     await session.commit()
     _set_refresh_cookie(response, refresh_token)
     return TokenResponse(access_token=access_token)
@@ -178,11 +198,21 @@ async def logout(
     refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    user_id: int | None = None
     if refresh_token is not None:
         try:
             token_data = decode_refresh_token(refresh_token)
+            user_id = token_data.user_id
             await _revoke_jti(session, token_data.jti)
-            await session.commit()
         except JWTError:
             pass  # malformed token — clear cookie anyway
+    await record_audit(
+        session,
+        action="auth.logout",
+        target_type="user",
+        target_id=user_id,
+        result="success",
+        user_id=user_id,
+        commit=True,
+    )
     _clear_refresh_cookie(response)

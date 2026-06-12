@@ -183,9 +183,6 @@ green "    Machine registered (id=$MACHINE_ID)."
 cyan ">>> Creating test scripts..."
 
 for SCRIPT_NAME in hello counter sysinfo; do
-    CONTENT=$(cat "$SCRIPTS_DIR/$SCRIPT_NAME.sh")
-    META=$(cat "$SCRIPTS_DIR/$SCRIPT_NAME.meta.yaml")
-
     python3 - "$SCRIPT_NAME" "$SCRIPTS_DIR/$SCRIPT_NAME.sh" "$SCRIPTS_DIR/$SCRIPT_NAME.meta.yaml" "$SERVER_URL" "$TOKEN" <<'PYEOF'
 import urllib.request, json, sys
 name, sh_path, meta_path, server, token = sys.argv[1:6]
