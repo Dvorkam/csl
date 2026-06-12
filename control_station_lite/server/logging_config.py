@@ -22,6 +22,10 @@ import sys
 from contextvars import ContextVar
 from datetime import UTC, datetime
 
+# HTTP header carrying the correlation id, both inbound (client-supplied) and
+# outbound (responses, and propagated to agent calls).
+REQUEST_ID_HEADER = "X-Request-ID"
+
 # Correlation id of the request currently being served, or None outside a
 # request (background tasks, startup). Populated by RequestIdMiddleware.
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)

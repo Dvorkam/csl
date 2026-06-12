@@ -170,7 +170,7 @@ Closes the gaps found in the 2026-06-10 architecture-vs-implementation review: t
 - [x] **9.2** Audit decorator / helper used by all state-mutating endpoints. Capture: user, action, target, result, structured details. (Currently only `builtin.py` writes `AuditLog` entries — auth, machines, scripts, and jobs write nothing; instrumenting them is the bulk of this phase.)
 - [x] **9.3** Verify coverage with a guard test: walk the FastAPI route table and assert every mutating route (`POST`/`PUT`/`DELETE`, login/logout, job submit/kill) is audit-instrumented — same spirit as the `_EXPECTED_ENDPOINTS` guard. Exempt routes (e.g. `/api/auth/refresh`) go on an explicit allowlist in the test.
 - [x] **9.4** Structured JSON logging on the server per §10: one JSON object per line to stdout. Agent keeps its current plain logging unless sharing the formatter is trivial.
-- [ ] **9.5** Correlation IDs per §10: middleware assigns a request ID, includes it in log records, and propagates it to agent calls via a header so one user action can be traced end-to-end.
+- [x] **9.5** Correlation IDs per §10: middleware assigns a request ID, includes it in log records, and propagates it to agent calls via a header so one user action can be traced end-to-end.
 - [ ] **9.6** Stable error codes per §10: exceptions surfaced as structured error responses with a stable `code` field. Define a small initial catalogue (auth, approval, agent-unreachable, validation).
 
 ---

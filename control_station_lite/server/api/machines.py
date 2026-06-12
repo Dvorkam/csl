@@ -31,6 +31,7 @@ from control_station_lite.server.core.crypto import decrypt, encrypt
 from control_station_lite.server.core.ssh import build_known_hosts, get_ssh_pool
 from control_station_lite.server.db.models import Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
+from control_station_lite.server.logging_config import REQUEST_ID_HEADER, request_id_var
 from control_station_lite.shared.models import AgentHealth
 from control_station_lite.shared.registration import RegistrationBundle
 from control_station_lite.shared.ssh_commands import CONFIG_READ_CMD
@@ -187,11 +188,15 @@ def _decrypt_private_key(machine: Machine) -> bytes:
 
 
 def _agent_auth_headers(machine: Machine) -> dict[str, str]:
-    """Bearer-token header for the agent API, or empty for legacy machines."""
-    if not machine.agent_token_encrypted:
-        return {}
-    token = decrypt(machine.agent_token_encrypted, get_settings().read_master_key()).decode()
-    return {"Authorization": f"Bearer {token}"}
+    """Bearer-token + correlation-id headers for direct agent calls."""
+    headers: dict[str, str] = {}
+    if machine.agent_token_encrypted:
+        token = decrypt(machine.agent_token_encrypted, get_settings().read_master_key()).decode()
+        headers["Authorization"] = f"Bearer {token}"
+    request_id = request_id_var.get()
+    if request_id is not None:
+        headers[REQUEST_ID_HEADER] = request_id
+    return headers
 
 
 # ---------------------------------------------------------------------------

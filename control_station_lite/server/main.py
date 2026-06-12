@@ -29,6 +29,7 @@ from control_station_lite.server.api import (
     machines,
     scripts,
 )
+from control_station_lite.server.middleware import RequestIdMiddleware
 from control_station_lite.server.web import admin as web_admin
 from control_station_lite.server.web import auth as web_auth
 from control_station_lite.server.web import dashboard as web_dashboard
@@ -96,6 +97,9 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="control-station-lite", lifespan=_lifespan)
+
+# Correlation-id middleware: outermost so every request (incl. errors) gets an id.
+app.add_middleware(RequestIdMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="static")
 
