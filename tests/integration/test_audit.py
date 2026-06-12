@@ -157,6 +157,8 @@ class TestInstrumentation:
     ) -> None:
         resp = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
         assert resp.status_code == 401
+        # Stable error code (Task 9.6) surfaced alongside the human-readable detail.
+        assert resp.json()["code"] == "auth.invalid_credentials"
         rows = _audit_rows(db_session, "auth.login")
         assert len(rows) == 1
         assert rows[0].result == "failure"

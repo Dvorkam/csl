@@ -7,16 +7,19 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 9 in progress** (branch `feature/phase-9-audit-observability`). 9.1–9.3 done. Next: **9.4–9.6** — structured JSON logging, correlation IDs, stable error codes.
+**Phase 9 complete** (branch `feature/phase-9-audit-observability`). Next: **Phase 10** — packaging and distribution (TASKS.md 10.1–10.10).
 
 ## Up next
 
-**9.4** structured JSON logging to stdout (one object/line), **9.5** correlation IDs (request-id middleware, propagated to agent calls), **9.6** stable error-code catalogue with structured error responses.
+**10.1** rework `deploy/Dockerfile` (prod + dev stages), **10.2** `deploy/nginx.conf`, **10.3** compose wiring (app not published directly). Open the Phase 9 PR first.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 9.6 | Stable error codes. New `server/core/errors.py`: `ErrorCode` StrEnum catalogue (auth/approval/agent/validation), `CslHTTPException` carrying a code (+ optional `extra`), `install_error_handlers()` returns `detail` + machine-stable `code`; `RequestValidationError` tagged `validation.error`. Applied to auth deps, login/refresh, job approval/agent-unreachable/validation paths. `detail` shape preserved for back-compat. 4 unit tests. | branch `feature/phase-9-audit-observability` |
+| 9.5 | Correlation IDs. Pure-ASGI `RequestIdMiddleware` assigns `X-Request-ID` per request (honours inbound), binds the `request_id` contextvar, echoes on response; `AgentClient` + direct agent-status call propagate the header to the agent. 4 unit tests. | branch `feature/phase-9-audit-observability` |
+| 9.4 | Structured JSON logging. `server/logging_config.py`: `JSONFormatter` (one object/line: timestamp/level/logger/message + optional request_id/extras/exc_info) + `configure_logging()` (root + uvicorn loggers); wired into `csl-server main()` with `log_config=None`. 6 unit tests. | branch `feature/phase-9-audit-observability` |
 | 9.1–9.3 | Audit log API + instrumentation. New `server/core/audit.py` `record_audit` helper (flush-by-default, `commit=True` on failure paths); instrumented auth (login success/failure, logout), machines (register, delete, bookmark, unbookmark), scripts (create, update, delete), jobs (submit success + rejected, kill); `builtin.wol` refactored onto the helper. `server/api/audit.py` admin-only `GET /api/audit` with action/target_type/username filters + offset/limit pagination (`AuditPageOut`). Guard test `test_audit_coverage.py` walks the route table asserting every mutating in-schema route calls `record_audit` (exempt allowlist: `POST /api/auth/refresh`). 4 helper unit + 14 integration tests. | branch `feature/phase-9-audit-observability` |
 | 8.5.7 | ARCHITECTURE.md updated to match the phase: §3.1/§3.2 (forced-command key, captured host key, bundle carries API token, job `expected_md5`, bearer on every agent request), §6.2 (`identity.api_token`), §5.1 (`ssh_host_key` + `agent_token_encrypted` columns), §7.1 (bcrypt direct + agent bearer auth + config-driven cookie Secure), §7.3 (host-key pinning), §7.4 (forced-command-backed "no shell" claim + run-time MD5 binding), §9.1 (pyproject excerpt: bcrypt/python-multipart). | branch `feature/phase-8.5-security-hardening` |
 | 8.5.6 | Cookie `secure` flag config-driven. New `Settings.cookie_secure` (env `CSL_COOKIE_SECURE`, default `true`); both `api/auth.py` (refresh cookie) and `web/auth.py` (access+refresh cookies) honour it; `.env.example` documents the dev `false` override. 4 new tests. | branch `feature/phase-8.5-security-hardening` |

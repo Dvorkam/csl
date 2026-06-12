@@ -9,13 +9,14 @@
 # (at your option) any later version, with an additional permission for
 # distribution through app stores (see LICENSE).
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from control_station_lite.server.auth.jwt import decode_access_token
+from control_station_lite.server.core.errors import CslHTTPException, ErrorCode
 from control_station_lite.server.db.models import User
 from control_station_lite.server.db.session import get_session
 
@@ -31,8 +32,9 @@ async def current_user(
     Raises 401 if the token is missing, malformed, expired, or the user no
     longer exists or is disabled.
     """
-    credentials_exception = HTTPException(
+    credentials_exception = CslHTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
+        code=ErrorCode.AUTH_TOKEN_INVALID,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
@@ -51,8 +53,9 @@ async def current_user(
 async def require_admin(user: User = Depends(current_user)) -> User:
     """FastAPI dependency: like *current_user* but raises 403 for non-admins."""
     if user.role != "admin":
-        raise HTTPException(
+        raise CslHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
+            code=ErrorCode.AUTH_FORBIDDEN,
             detail="Admin access required",
         )
     return user
