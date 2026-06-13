@@ -294,3 +294,35 @@ class TestOpenApiSchema:
             for method in methods
         }
         assert actual == _EXPECTED_ENDPOINTS
+
+
+class TestScriptNameValidation:
+    """Reserved/unsafe script names are rejected with 422, never a 5xx.
+
+    Regression for a Windows-only crash: a fuzzed reserved device name (e.g.
+    NUL) reached the filesystem and raised PermissionError (a 500) from the
+    stage endpoint. The name is now validated as a safe cross-platform filename.
+    """
+
+    # Note: ".." is normalised away by URL handling before routing, so it can't
+    # reach the endpoint via the path — the validator still covers it for
+    # non-URL callers (see tests/unit/shared/test_script_name.py).
+    @pytest.mark.parametrize("name", ["NUL", "con", "COM1", "trailing."])
+    def test_stage_rejects_unsafe_name(self, isolated_client: TestClient, name: str) -> None:
+        resp = isolated_client.post(
+            f"/scripts/{name}/stage",
+            json={"content": "echo hi\n", "md5": hashlib.md5(b"echo hi\n").hexdigest()},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.parametrize("name", ["NUL", "con", "COM1"])
+    def test_state_rejects_unsafe_name(self, isolated_client: TestClient, name: str) -> None:
+        assert isolated_client.get(f"/scripts/{name}/state").status_code == 422
+
+    def test_safe_name_still_works(self, isolated_client: TestClient) -> None:
+        resp = isolated_client.post(
+            "/scripts/greet.sh/stage",
+            json={"content": "echo hi\n", "md5": hashlib.md5(b"echo hi\n").hexdigest()},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "pending"
