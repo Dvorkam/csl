@@ -99,4 +99,12 @@ Workflows live in `.github/workflows/`:
 
 - **`ci.yml`** — every PR (not on push to main — that would be redundant given branch protection). Matrix: `{ubuntu-latest, windows-latest} × python-3.11`. Steps: install, lint, type-check, unit + contract + integration tests, coverage report.
 - **`e2e.yml`** — every PR. Builds Docker image, runs `tests/e2e/` with a real agent subprocess on the runner. **REVISIT** if wall-clock time regularly exceeds ~10 minutes: at that point introduce a `dev` staging branch so PRs target `dev` (CI only) and a `dev`→`main` PR triggers the full suite as the release gate.
-- **`release.yml`** — deferred. Tag push → build/publish PyPI + Docker. Not in scope for v0.1.
+- **`release.yml`** — tag-driven (`v*`). The version comes from the tag, not `pyproject.toml`
+  (which is a dev placeholder the workflow overwrites at build time — no auto-versioning). A
+  pre-release tag (non-`X.Y.Z`, e.g. `v0.2.0rc1`) publishes to TestPyPI only; a final `vX.Y.Z`
+  tag publishes to TestPyPI **and** PyPI and tags the GHCR image `latest`. Auth is PyPI Trusted
+  Publishing (OIDC) — no tokens; a `verify-install` job installs `[agent]` from TestPyPI on
+  Linux + Windows. The Docker image (`ghcr.io/dvorkam/control-station-lite`) pushes via the
+  built-in `GITHUB_TOKEN`. **Setup once:** add a pending publisher on both TestPyPI (environment
+  `testpypi`) and PyPI (environment `pypi`) for project `control-station-lite`, repo
+  `Dvorkam/csl`, workflow `release.yml`.
