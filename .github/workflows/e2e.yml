@@ -11,7 +11,12 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    name: e2e / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -27,13 +32,15 @@ jobs:
       - name: Install all dependencies (server + agent + test)
         run: uv sync --all-extras --all-groups
 
-      # The control station runs inside Docker; the agent runs as a local
-      # subprocess on the CI runner, connected to the server via SSH tunnel.
-      # The agent communicates back on localhost so no extra network config needed.
-      - name: Build control station Docker image
+      # Linux only: the shipped prod image is a Linux container the Windows
+      # runner can't build. Fast-fail smoke check that deploy/docker-compose.yml
+      # still builds; the Docker-stack e2e test self-skips off Linux.
+      - name: Build production compose image
+        if: runner.os == 'Linux'
         run: docker compose -f deploy/docker-compose.yml build
 
       - name: Run e2e test suite
-        # pytest fixtures in tests/e2e/ manage docker compose up/down for the
-        # server and spawn/teardown the agent subprocess.
+        # Linux: in-process linux_only flows + test_docker_stack.py (real
+        # app+nginx stack over the network). Windows: the windows_only agent
+        # flows (real PowerShell execution); the Docker-stack test self-skips.
         run: uv run pytest tests/e2e -v --no-cov

@@ -23,6 +23,8 @@ and talk to the agent:
   scripts_dir    — absolute path to approved scripts on the target (string)
   hostname_hint  — human-readable hostname, advisory only (string)
   platform       — "linux" | "windows" | "macos" (string)
+  agent_version  — the agent's package version (string); the control station
+                   refuses registration on a major-version mismatch (§11)
 
 Decoding (Task 4.1) will live here once the server side is implemented.
 """
@@ -46,6 +48,7 @@ _REQUIRED_FIELDS = frozenset(
         "hostname_hint",
         "platform",
         "ssh_user",
+        "agent_version",
     }
 )
 
@@ -65,6 +68,7 @@ class RegistrationBundle:
         platform: str,
         ssh_user: str,
         api_token: str,
+        agent_version: str,
     ) -> None:
         self.private_key = private_key
         self.key_fingerprint = key_fingerprint
@@ -74,6 +78,7 @@ class RegistrationBundle:
         self.platform = platform
         self.ssh_user = ssh_user
         self.api_token = api_token
+        self.agent_version = agent_version
 
     def encode(self) -> str:
         """Return the base64-encoded JSON representation."""
@@ -86,6 +91,7 @@ class RegistrationBundle:
             platform=self.platform,
             ssh_user=self.ssh_user,
             api_token=self.api_token,
+            agent_version=self.agent_version,
         )
 
     @classmethod
@@ -124,6 +130,7 @@ class RegistrationBundle:
             platform=platform,
             ssh_user=data["ssh_user"],
             api_token=data["api_token"],
+            agent_version=data["agent_version"],
         )
 
 
@@ -137,6 +144,7 @@ def encode_bundle(
     platform: str,
     ssh_user: str,
     api_token: str,
+    agent_version: str,
 ) -> str:
     """Return a base64-encoded JSON registration bundle string."""
     payload: dict[str, Any] = {
@@ -148,5 +156,6 @@ def encode_bundle(
         "platform": platform,
         "ssh_user": ssh_user,
         "api_token": api_token,
+        "agent_version": agent_version,
     }
     return base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()

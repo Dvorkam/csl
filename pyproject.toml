@@ -4,6 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "control-station-lite"
+# Dev placeholder. The published version comes from the pushed git tag —
+# release.yml overrides this line at build time. See docs/agent_ref/workflow.md.
 version = "0.1.2"
 description = "A lightweight self-hosted web service for controlling LAN machines"
 readme = "README.md"

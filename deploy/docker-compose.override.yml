@@ -1,0 +1,17 @@
+# Development override (loaded automatically by `docker compose` alongside
+# docker-compose.yml). Switches the app to the editable `dev` image and
+# bind-mounts the source tree so code changes are reflected without a rebuild.
+#
+# It also publishes the app port directly for convenience while developing.
+# This file must NOT be used in production — there, only nginx is the edge.
+services:
+  app:
+    build:
+      target: dev
+    image: control-station-lite:dev
+    environment:
+      CSL_LOG_LEVEL: "DEBUG"
+    volumes:
+      - ../control_station_lite:/app/control_station_lite
+    ports:
+      - "8000:8000"

@@ -42,6 +42,8 @@ class ErrorCode(StrEnum):
     AGENT_UNREACHABLE = "agent.unreachable"
     # validation
     VALIDATION_ERROR = "validation.error"
+    # compatibility
+    VERSION_INCOMPATIBLE = "version.incompatible"
 
 
 class CslHTTPException(HTTPException):

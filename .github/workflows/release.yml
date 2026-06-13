@@ -1,0 +1,180 @@
+name: Release
+
+# Tag-driven release. Push a version tag (e.g. `v0.2.0`) onto a commit to cut a
+# release — the version is taken from the tag, not from pyproject.toml (which
+# holds only a dev placeholder). No automatic version bumping.
+#
+# Pre-release tags (anything that isn't a bare X.Y.Z, e.g. `v0.2.0rc1`) publish
+# to TestPyPI only; final `vX.Y.Z` tags publish to TestPyPI *and* PyPI and tag
+# the Docker image `latest`. So the workflow is exercised end-to-end with an rc
+# tag before any real PyPI release.
+#
+# Auth uses PyPI Trusted Publishing (OIDC) — no API tokens. Configure a
+# *pending publisher* on TestPyPI and PyPI before the first run:
+#   project=control-station-lite  owner=Dvorkam  repo=csl
+#   workflow=release.yml  environment=testpypi (and a second one, =pypi)
+# The Docker image goes to GHCR via the built-in GITHUB_TOKEN (no secret).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Releasing version '${version}' from tag '${tag}'."
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Pin version from the tag
+        shell: bash
+        run: |
+          sed -i -E 's/^version = ".*"/version = "${{ needs.prepare.outputs.version }}"/' \
+            pyproject.toml
+          grep -E '^version = ' pyproject.toml
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write # OIDC for Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  verify-install:
+    # Fulfils Task 10.7: install the freshly published package from TestPyPI in a
+    # clean runner on Linux and Windows and confirm the console script works.
+    needs: [prepare, publish-testpypi]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install [agent] from TestPyPI and smoke-test the CLI
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          # Deps resolve from real PyPI; only the package itself from TestPyPI.
+          # Retry a few times to absorb TestPyPI index propagation lag.
+          for attempt in 1 2 3 4 5 6; do
+            if pip install \
+                --index-url https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple/ \
+                "control-station-lite[agent]==${{ needs.prepare.outputs.version }}"; then
+              break
+            fi
+            echo "install attempt ${attempt} failed; retrying in 15s"
+            sleep 15
+          done
+          csl-agent --help
+
+  publish-pypi:
+    # Final (X.Y.Z) tags only; pre-releases stop at TestPyPI.
+    needs: [prepare, build, verify-install]
+    if: needs.prepare.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  docker:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to GHCR with the built-in GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin version from the tag
+        shell: bash
+        run: |
+          sed -i -E 's/^version = ".*"/version = "${{ needs.prepare.outputs.version }}"/' \
+            pyproject.toml
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/control-station-lite
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.prerelease == 'false' }}
+
+      - name: Build and push the prod image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: prod
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

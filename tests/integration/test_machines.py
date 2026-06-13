@@ -13,7 +13,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from control_station_lite.server.api.machines import _host_key_fingerprint, _ssh_connection_test
+from control_station_lite.server.api.machines import (
+    _host_key_fingerprint,
+    _server_version,
+    _ssh_connection_test,
+)
 from control_station_lite.server.auth.jwt import create_access_token
 from control_station_lite.server.auth.password import hash_password
 from control_station_lite.server.core.crypto import encrypt
@@ -31,6 +35,9 @@ _BUNDLE_KWARGS = {
     "platform": "linux",
     "ssh_user": "alice",
     "api_token": "agent-token-xyz",
+    # Matches the server's own version so the registration happy path passes
+    # regardless of the project's current version number.
+    "agent_version": _server_version(),
 }
 
 
@@ -220,6 +227,33 @@ class TestRegisterMachine:
             headers=_admin_h(admin_user),
         )
         assert resp.status_code == 400
+
+    def test_major_version_mismatch_returns_409(self, client: TestClient, admin_user: User) -> None:
+        # Major-version mismatch is rejected before any SSH connection attempt.
+        bundle = encode_bundle(**{**_BUNDLE_KWARGS, "agent_version": "99.0.0"})
+        resp = client.post(
+            "/api/machines",
+            json={"bundle": bundle, "name": "my-machine", "ssh_host": "192.168.1.100"},
+            headers=_admin_h(admin_user),
+        )
+        assert resp.status_code == 409
+        body = resp.json()
+        assert body["code"] == "version.incompatible"
+        assert body["agent_version"] == "99.0.0"
+
+    def test_unparseable_agent_version_is_allowed(
+        self, client: TestClient, admin_user: User
+    ) -> None:
+        # "unknown" (agent run from a source checkout) cannot prove incompatibility,
+        # so registration proceeds rather than blocking dev work.
+        bundle = encode_bundle(**{**_BUNDLE_KWARGS, "agent_version": "unknown"})
+        with _no_op_connection_test():
+            resp = client.post(
+                "/api/machines",
+                json={"bundle": bundle, "name": "dev-machine", "ssh_host": "192.168.1.100"},
+                headers=_admin_h(admin_user),
+            )
+        assert resp.status_code == 201
 
     def test_connection_test_failure_returns_422(
         self, client: TestClient, admin_user: User

@@ -17,6 +17,7 @@ import argparse
 import base64
 import getpass
 import hashlib
+import importlib.metadata
 import logging
 import secrets
 import shutil
@@ -34,6 +35,7 @@ from .cmd_setup import ReadinessIssue, _print_issues, _windows_is_admin, check_r
 
 __all__ = [
     "_WINDOWS_ADMIN_AK_PATH",
+    "_agent_version",
     "_append_authorized_keys",
     "_build_authorized_keys_entry",
     "_generate_keypair",
@@ -286,6 +288,14 @@ def _platform_name() -> str:
     return "linux"
 
 
+def _agent_version() -> str:
+    """Installed package version, or ``"unknown"`` when running from a checkout."""
+    try:
+        return importlib.metadata.version("control-station-lite")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
 # ---------------------------------------------------------------------------
 # init command handler
 # ---------------------------------------------------------------------------
@@ -359,6 +369,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         platform=_platform_name(),
         ssh_user=getpass.getuser(),
         api_token=api_token,
+        agent_version=_agent_version(),
     )
 
     print("\n=== REGISTRATION BUNDLE (send this to the control station admin) ===")

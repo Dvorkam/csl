@@ -16,6 +16,7 @@ _SAMPLE = {
     "platform": "linux",
     "ssh_user": "alice",
     "api_token": "test-token-abc123",
+    "agent_version": "0.1.2",
 }
 
 
@@ -51,6 +52,7 @@ class TestEncodeBundle:
         assert bundle.hostname_hint == _SAMPLE["hostname_hint"]
         assert bundle.ssh_user == _SAMPLE["ssh_user"]
         assert bundle.api_token == _SAMPLE["api_token"]
+        assert bundle.agent_version == _SAMPLE["agent_version"]
 
 
 class TestRegistrationBundleDecode:
@@ -76,6 +78,13 @@ class TestRegistrationBundleDecode:
     def test_missing_field_raises(self) -> None:
         data = dict(_SAMPLE)
         del data["private_key"]
+        encoded = base64.b64encode(json.dumps(data).encode()).decode()
+        with pytest.raises(ValueError, match="missing fields"):
+            RegistrationBundle.decode(encoded)
+
+    def test_missing_agent_version_raises(self) -> None:
+        data = dict(_SAMPLE)
+        del data["agent_version"]
         encoded = base64.b64encode(json.dumps(data).encode()).decode()
         with pytest.raises(ValueError, match="missing fields"):
             RegistrationBundle.decode(encoded)

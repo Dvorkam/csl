@@ -31,3 +31,4 @@ build/
 # DB related artifacts
 *.db
 *.sqlite
+.claude/settings.json
