@@ -24,6 +24,7 @@ import base64
 import os
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -53,8 +54,12 @@ def _docker_available() -> bool:
         return False
 
 
+# The shipped image is a Linux container; on a Windows runner the daemon is in
+# Windows-container mode (so `docker info` succeeds) but a Linux build would
+# fail, not skip — hence the explicit platform guard before the daemon probe.
 pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason="Docker daemon not available for the deployment-stack e2e"
+    sys.platform != "linux" or not _docker_available(),
+    reason="deployment-stack e2e needs a Linux host with a reachable Docker daemon",
 )
 
 
