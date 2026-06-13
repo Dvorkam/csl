@@ -107,19 +107,28 @@ jobs:
       - name: Install [agent] from TestPyPI and smoke-test the CLI
         shell: bash
         run: |
+          set -euo pipefail
+          version="${{ needs.prepare.outputs.version }}"
           python -m pip install --upgrade pip
-          # Deps resolve from real PyPI; only the package itself from TestPyPI.
-          # Retry a few times to absorb TestPyPI index propagation lag.
+
+          # Two-step on purpose. TestPyPI hosts squatted stubs of common
+          # dependency names (e.g. a broken "FASTAPI" at version 1.0 that
+          # outranks real fastapi), so resolving deps against TestPyPI picks the
+          # junk. Instead: pull ONLY our package from TestPyPI with --no-deps,
+          # then let the real dependencies resolve from PyPI.
           for attempt in 1 2 3 4 5 6; do
-            if pip install \
+            if pip install --no-deps \
                 --index-url https://test.pypi.org/simple/ \
-                --extra-index-url https://pypi.org/simple/ \
-                "control-station-lite[agent]==${{ needs.prepare.outputs.version }}"; then
+                "control-station-lite==${version}"; then
               break
             fi
-            echo "install attempt ${attempt} failed; retrying in 15s"
+            echo "TestPyPI install attempt ${attempt} failed (propagation lag?); retrying in 15s"
             sleep 15
           done
+
+          # Package already present at the right version, so this only fills in
+          # the [agent] dependencies, all from real PyPI.
+          pip install --index-url https://pypi.org/simple/ "control-station-lite[agent]==${version}"
           csl-agent --help
 
   publish-pypi:
