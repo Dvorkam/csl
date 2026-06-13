@@ -27,13 +27,15 @@ jobs:
       - name: Install all dependencies (server + agent + test)
         run: uv sync --all-extras --all-groups
 
-      # The control station runs inside Docker; the agent runs as a local
-      # subprocess on the CI runner, connected to the server via SSH tunnel.
-      # The agent communicates back on localhost so no extra network config needed.
-      - name: Build control station Docker image
+      # Fast-fail smoke check for the shipped production compose file: it must
+      # still build. The e2e suite below brings the stack up via its own
+      # generated compose, so this is the only step that exercises
+      # deploy/docker-compose.yml itself.
+      - name: Build production compose image
         run: docker compose -f deploy/docker-compose.yml build
 
       - name: Run e2e test suite
-        # pytest fixtures in tests/e2e/ manage docker compose up/down for the
-        # server and spawn/teardown the agent subprocess.
+        # In-process suites (approval/job flow) plus test_docker_stack.py, which
+        # builds the prod image and drives the real app+nginx stack over the
+        # network via docker compose. Linux-only; auto-skips with no Docker daemon.
         run: uv run pytest tests/e2e -v --no-cov
