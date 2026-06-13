@@ -22,6 +22,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import AfterValidator
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from control_station_lite.agent.approvals import ApprovalError, ApprovalsManager
@@ -45,6 +46,7 @@ from control_station_lite.shared.models import (
     StageScriptRequest,
     StageScriptResponse,
 )
+from control_station_lite.shared.script_name import validate_script_name
 
 __all__ = ["app", "main"]
 
@@ -159,11 +161,16 @@ async def healthz(request: Request) -> AgentHealth:
     )
 
 
+# The name becomes an on-disk filename, so reject anything that isn't a safe
+# cross-platform filename (illegal chars via the schema pattern; reserved device
+# names, dots-only, and trailing dots via the validator). An invalid name yields
+# a 422 instead of a filesystem error.
 _SAFE_NAME = Path(pattern=r"^[A-Za-z0-9_\-.]+$")
+_NAME = Annotated[str, _SAFE_NAME, AfterValidator(validate_script_name)]
 
 
 @app.get("/scripts/{name}/state", response_model=ScriptDescriptor)
-async def get_script_state(name: Annotated[str, _SAFE_NAME], request: Request) -> ScriptDescriptor:
+async def get_script_state(name: _NAME, request: Request) -> ScriptDescriptor:
     """Return the current approval state of a script on this agent."""
     approvals: ApprovalsManager = request.app.state.approvals
     return approvals.get_state(name)
@@ -171,7 +178,7 @@ async def get_script_state(name: Annotated[str, _SAFE_NAME], request: Request) -
 
 @app.post("/scripts/{name}/stage", response_model=StageScriptResponse)
 async def stage_script(
-    name: Annotated[str, _SAFE_NAME], body: StageScriptRequest, request: Request
+    name: _NAME, body: StageScriptRequest, request: Request
 ) -> StageScriptResponse:
     """Stage a script for target-owner review."""
     approvals: ApprovalsManager = request.app.state.approvals
