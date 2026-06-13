@@ -7,16 +7,17 @@ itself without scanning `git log` or all of `TASKS.md`.
 
 ## Current task
 
-**Phase 9 complete** (branch `feature/phase-9-audit-observability`). Next: **Phase 10** — packaging and distribution (TASKS.md 10.1–10.10).
+**Phase 10 partially complete** (branch `feature/phase-10-packaging`): deployment artifacts (10.1–10.6) and the version-compat check (10.9) are done. Next: **10.7** PyPI release pipeline + version scheme, **10.8** Docker image publish, **10.10** clean-NAS e2e smoke test — all deferred because they need external credentials/registry or real hardware.
 
 ## Up next
 
-**10.1** rework `deploy/Dockerfile` (prod + dev stages), **10.2** `deploy/nginx.conf`, **10.3** compose wiring (app not published directly). Open the Phase 9 PR first.
+**10.7** decide release version scheme (pyproject still 0.1.x; first tag cut when nearing completion) and build `release.yml` for PyPI; **10.8** extend it to build/push the prod Docker image; **10.10** run `setup.sh` on a real NAS and register a Linux + Windows target end-to-end.
 
 ## Recently completed
 
 | Task | Summary | PR / commit |
 | --- | --- | --- |
+| 10.1–10.6, 10.9 | Packaging artifacts. `deploy/Dockerfile` reworked into `base`→`prod`/`dev` stages (prod bakes the package + runs non-root; dev does an editable install for the bind-mount workflow). `deploy/nginx.conf` (conf.d snippet): TLS termination, HTTP→HTTPS redirect, `limit_req` 5r/s on `/api/auth/*`, 2 MB body cap, SSE-friendly proxying, security headers. `deploy/docker-compose.yml`: app `expose`d only (never published) + nginx as the sole edge, bind-mounts `/var/lib/control-station-lite/{db,scripts,secrets,certs,logs}`; `docker-compose.override.yml` switches app to the dev stage + source bind-mount. `deploy/entrypoint.sh` runs `alembic upgrade head` (idempotent) before exec'ing `csl-server`. `deploy/control-station.service` systemd unit drives `docker compose` from `/opt/control-station-lite/deploy`. `scripts/setup.sh` idempotent bootstrap (deps check, data dirs, never-overwrite secrets/cert, stage repo, install+start service, interactive admin) with a `tests/bats/setup.bats` suite (fresh/rerun/upgrade). 10.9: `agent_version` added to the registration bundle (format change — re-init required); `POST /api/machines` refuses on a major-version mismatch via new `ErrorCode.VERSION_INCOMPATIBLE` (409), allows unparseable "unknown" with a warning. New/updated tests: registration unit, machines integration (mismatch 409 + unknown-allowed), bats suite. | branch `feature/phase-10-packaging` |
 | 9.6 | Stable error codes. New `server/core/errors.py`: `ErrorCode` StrEnum catalogue (auth/approval/agent/validation), `CslHTTPException` carrying a code (+ optional `extra`), `install_error_handlers()` returns `detail` + machine-stable `code`; `RequestValidationError` tagged `validation.error`. Applied to auth deps, login/refresh, job approval/agent-unreachable/validation paths. `detail` shape preserved for back-compat. 4 unit tests. | branch `feature/phase-9-audit-observability` |
 | 9.5 | Correlation IDs. Pure-ASGI `RequestIdMiddleware` assigns `X-Request-ID` per request (honours inbound), binds the `request_id` contextvar, echoes on response; `AgentClient` + direct agent-status call propagate the header to the agent. 4 unit tests. | branch `feature/phase-9-audit-observability` |
 | 9.4 | Structured JSON logging. `server/logging_config.py`: `JSONFormatter` (one object/line: timestamp/level/logger/message + optional request_id/extras/exc_info) + `configure_logging()` (root + uvicorn loggers); wired into `csl-server main()` with `log_config=None`. 6 unit tests. | branch `feature/phase-9-audit-observability` |

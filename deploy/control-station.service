@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# systemd unit for the control station Docker stack.
+#
+# Installed at /etc/systemd/system/control-station.service by scripts/setup.sh,
+# which also stages the deploy files at /opt/control-station-lite. Brings the
+# compose stack up at boot and tears it down on stop. Manage with:
+#   systemctl {enable,start,stop,status} control-station
+[Unit]
+Description=Control Station Lite
+Documentation=https://github.com/Dvorkam/csl
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/control-station-lite/deploy
+# Only the production compose file: the dev override must never load here.
+ExecStart=/usr/bin/docker compose -f docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.yml down
+ExecReload=/usr/bin/docker compose -f docker-compose.yml up -d
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

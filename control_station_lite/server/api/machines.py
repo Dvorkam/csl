@@ -13,6 +13,9 @@
 
 import base64
 import hashlib
+import importlib.metadata
+import logging
+import re
 import time
 from datetime import datetime
 
@@ -28,6 +31,7 @@ from control_station_lite.server.auth.dependencies import current_user, require_
 from control_station_lite.server.config import get_settings
 from control_station_lite.server.core.audit import record_audit
 from control_station_lite.server.core.crypto import decrypt, encrypt
+from control_station_lite.server.core.errors import CslHTTPException, ErrorCode
 from control_station_lite.server.core.ssh import build_known_hosts, get_ssh_pool
 from control_station_lite.server.db.models import Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
@@ -36,7 +40,51 @@ from control_station_lite.shared.models import AgentHealth
 from control_station_lite.shared.registration import RegistrationBundle
 from control_station_lite.shared.ssh_commands import CONFIG_READ_CMD
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/machines", tags=["machines"])
+
+
+def _server_version() -> str:
+    try:
+        return importlib.metadata.version("control-station-lite")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _major(version: str) -> int | None:
+    """Leading integer of a version string, or None when it has none."""
+    match = re.match(r"\s*(\d+)", version)
+    return int(match.group(1)) if match else None
+
+
+def _assert_version_compatible(agent_version: str) -> None:
+    """Refuse registration when the agent's major version differs (§11).
+
+    Server and agent ship as a single PyPI version and must match on the major.
+    When either version lacks a parseable major (e.g. an agent run from a source
+    checkout reports ``"unknown"``), we log and allow rather than block dev work.
+    """
+    server_version = _server_version()
+    agent_major = _major(agent_version)
+    server_major = _major(server_version)
+    if agent_major is None or server_major is None:
+        logger.warning(
+            "registration version check skipped: unparseable version (agent=%r, server=%r)",
+            agent_version,
+            server_version,
+        )
+        return
+    if agent_major != server_major:
+        raise CslHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            code=ErrorCode.VERSION_INCOMPATIBLE,
+            detail=(
+                f"agent version {agent_version!r} is incompatible with server "
+                f"version {server_version!r}: major versions must match"
+            ),
+            extra={"agent_version": agent_version, "server_version": server_version},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +262,8 @@ async def register_machine(
         bundle = RegistrationBundle.decode(body.bundle)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    _assert_version_compatible(bundle.agent_version)
 
     ssh_user = body.ssh_user or bundle.ssh_user
 

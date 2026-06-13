@@ -130,18 +130,26 @@ def main() -> None:  # pragma: no cover
     from control_station_lite.server.config import get_settings
     from control_station_lite.server.logging_config import configure_logging
 
+    # Defaults come from settings (CSL_HOST / CSL_PORT) so the container can bind
+    # 0.0.0.0; explicit flags still win. Fall back if settings can't be loaded.
+    try:
+        settings = get_settings()
+        log_level = settings.log_level
+        default_host = settings.host
+        default_port = settings.port
+    except Exception:
+        log_level = "INFO"
+        default_host = "127.0.0.1"
+        default_port = 8000
+
     parser = argparse.ArgumentParser(prog="csl-server")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default=default_host)
+    parser.add_argument("--port", type=int, default=default_port)
     parser.add_argument("--reload", action="store_true", default=False)
     args = parser.parse_args()
 
     # Structured JSON logging to stdout (ARCHITECTURE §10); pass log_config=None
     # so uvicorn keeps our handler instead of installing its own dictConfig.
-    try:
-        log_level = get_settings().log_level
-    except Exception:
-        log_level = "INFO"
     configure_logging(log_level)
 
     uvicorn.run(

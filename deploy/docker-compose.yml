@@ -1,8 +1,46 @@
+# Production stack: the FastAPI app plus nginx as the only edge.
+#
+# The app port is deliberately NOT published — only nginx exposes ports to the
+# host. The app is reachable solely over the internal compose network as `app`.
+#
+# Persistent state lives under /var/lib/control-station-lite on the host
+# (created and populated by scripts/setup.sh): db, scripts, secrets, certs,
+# logs. These are bind-mounted so the secrets/certs that setup.sh generates are
+# the same files the containers read.
 services:
   app:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    ports:
-      - "8080:8080"
+      target: prod
+    image: control-station-lite:latest
     restart: unless-stopped
+    # Entrypoint runs `alembic upgrade head` before starting uvicorn.
+    environment:
+      CSL_HOST: "0.0.0.0"
+      CSL_PORT: "8000"
+      CSL_DATABASE_URL: "sqlite+aiosqlite:////var/lib/control-station-lite/db/control-station.sqlite"
+      CSL_MASTER_KEY_PATH: "/var/lib/control-station-lite/secrets/master.key"
+      CSL_JWT_KEY_PATH: "/var/lib/control-station-lite/secrets/jwt.key"
+      CSL_LOG_LEVEL: "INFO"
+      CSL_COOKIE_SECURE: "true"
+    volumes:
+      - /var/lib/control-station-lite/db:/var/lib/control-station-lite/db
+      - /var/lib/control-station-lite/scripts:/var/lib/control-station-lite/scripts
+      - /var/lib/control-station-lite/secrets:/var/lib/control-station-lite/secrets:ro
+      - /var/lib/control-station-lite/logs:/var/lib/control-station-lite/logs
+    # Internal only — reachable as `app:8000` on the compose network.
+    expose:
+      - "8000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /var/lib/control-station-lite/certs:/etc/nginx/certs:ro

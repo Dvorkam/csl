@@ -545,6 +545,7 @@ class TestCmdInit:
         assert bundle.agent_port == 36717
         assert bundle.key_fingerprint.startswith("SHA256:")
         assert bundle.platform in {"linux", "windows", "macos"}
+        assert bundle.agent_version  # version string carried for the compat check
 
     def test_custom_port(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:  # type: ignore[type-arg]
         self._run_init(tmp_path, ["--port", "9999"])

@@ -113,7 +113,21 @@ csl-agent policy manual sleep_machine   # revoke auto-approval
 
 The control station is the always-on component (typically a NAS or home server) that hosts the web UI.
 
-> **Note:** Docker/nginx packaging is in progress (Phase 10). For now, run it directly.
+### Docker (recommended)
+
+From a checkout on the host, `scripts/setup.sh` bootstraps everything (data dirs
+under `/var/lib/control-station-lite`, secrets, a self-signed TLS cert, the
+systemd unit) and brings up the `deploy/docker-compose.yml` stack — the app
+behind nginx (TLS, auth rate-limiting), with migrations run automatically on
+start. Rerunning it is safe and never destroys data.
+
+```bash
+sudo scripts/setup.sh
+```
+
+> **Note:** the image is built locally for now; a published image and a tagged
+> PyPI release (Tasks 10.7–10.8) are still pending, as is the verified
+> clean-NAS end-to-end run (10.10). To run without Docker, follow the steps below.
 
 ### 1. Install
 
@@ -144,7 +158,7 @@ export CSL_DATABASE_URL=sqlite+aiosqlite:///data/csl.db   # default
 ### 4. Initialise the database and create an admin user
 
 ```bash
-csl-server migrate          # runs Alembic migrations
+alembic upgrade head        # runs Alembic migrations
 csl-admin create-admin      # prompts for username + password
 ```
 

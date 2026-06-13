@@ -177,15 +177,15 @@ Closes the gaps found in the 2026-06-10 architecture-vs-implementation review: t
 
 ## Phase 10 — Packaging and distribution
 
-- [ ] **10.1** `deploy/Dockerfile` for the control station. A basic single-stage file already exists; rework it per §9.2 — prod stage with the package baked in, plus a dev stage for the editable-install workflow.
-- [ ] **10.2** `deploy/nginx.conf` template with TLS config, rate limiting on `/api/auth/*`, sane request size limits.
-- [ ] **10.3** `deploy/docker-compose.yml` wiring app + nginx, with documented volumes. nginx is the only edge: the app port must not be published directly (the current compose file publishes `8080` — fix that here). Add `deploy/docker-compose.override.yml` bind-mounting the source for dev (§9.2).
-- [ ] **10.4** Run migrations on deploy: container entrypoint runs `alembic upgrade head` before starting uvicorn. Idempotent on every start.
-- [ ] **10.5** `deploy/control-station.service` systemd unit.
-- [ ] **10.6** `scripts/setup.sh` bootstrap per §9.4. Idempotent: rerun must not destroy data.
+- [x] **10.1** `deploy/Dockerfile` for the control station. A basic single-stage file already exists; rework it per §9.2 — prod stage with the package baked in, plus a dev stage for the editable-install workflow.
+- [x] **10.2** `deploy/nginx.conf` template with TLS config, rate limiting on `/api/auth/*`, sane request size limits.
+- [x] **10.3** `deploy/docker-compose.yml` wiring app + nginx, with documented volumes. nginx is the only edge: the app port must not be published directly (the current compose file publishes `8080` — fix that here). Add `deploy/docker-compose.override.yml` bind-mounting the source for dev (§9.2).
+- [x] **10.4** Run migrations on deploy: container entrypoint runs `alembic upgrade head` before starting uvicorn. Idempotent on every start.
+- [x] **10.5** `deploy/control-station.service` systemd unit.
+- [x] **10.6** `scripts/setup.sh` bootstrap per §9.4. Idempotent: rerun must not destroy data.
 - [ ] **10.7** Decide the release version scheme (pyproject stays at 0.1.0 until the first tag is cut — see project notes), then build the PyPI release pipeline. Verify `pip install control-station-lite[agent]` works in a clean container on Linux and Windows.
 - [ ] **10.8** Extend the release pipeline to build and push the prod Docker image, tagged to match the PyPI release (§9.2).
-- [ ] **10.9** Version-compatibility check per §11: include the agent version in the registration bundle (`shared/registration.py`); `POST /api/machines` refuses registration when the major version differs from the server's.
+- [x] **10.9** Version-compatibility check per §11: include the agent version in the registration bundle (`shared/registration.py`); `POST /api/machines` refuses registration when the major version differs from the server's.
 - [ ] **10.10** End-to-end smoke test from a clean NAS: run `setup.sh`, register one Linux target, one Windows target, run scripts on each.
 
 ---
