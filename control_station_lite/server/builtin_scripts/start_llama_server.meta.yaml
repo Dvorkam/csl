@@ -1,0 +1,20 @@
+description: Start a llama.cpp server (llama-server) as a persistent job (Windows).
+persistent: true
+tags: [ai, server, builtin]
+params:
+  - name: model_path
+    type: path
+    required: true
+    help: Absolute path to the GGUF model file on the target.
+  - name: context_size
+    type: int
+    required: false
+    default: 4096
+    min: 256
+    help: Context window size passed to --ctx-size.
+  - name: gpu_layers
+    type: int
+    required: false
+    default: 0
+    min: 0
+    help: Number of model layers to offload to GPU (--n-gpu-layers); 0 = CPU only.

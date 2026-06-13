@@ -181,6 +181,7 @@ The web UI is available at `http://localhost:8000`.
 - **Live log viewer** — SSE-based streaming, auto-scrolling, kill button for persistent jobs
 - **Job history** — filterable list of all past runs, links to log viewer
 - **Admin panel** — script library editor, machine management, user management, audit log viewer
+- **Built-in scripts** — `setup.sh` seeds a starter catalogue (`sleep_machine`, `restart_machine`, `start_steam`, `start_llama_server`) into the library; re-running `csl-admin seed-scripts` is idempotent and never overwrites your edits. Target owners still approve each one before it can run.
 
 ---
 

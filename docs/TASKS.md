@@ -194,12 +194,12 @@ Closes the gaps found in the 2026-06-10 architecture-vs-implementation review: t
 
 Ship as default scripts that target owners can opt into. Each is a `.sh` (Linux/macOS) and/or `.ps1` (Windows) plus `.meta.yaml`.
 
-- [ ] **11.1** Decide where built-in scripts live and how they reach the script library: ship them inside the package (e.g. `control_station_lite/server/builtin_scripts/`) and seed them into the `scripts` table via a CLI command invoked from `setup.sh`. Seeding is idempotent and must not overwrite admin edits to an existing script.
-- [ ] **11.2** `sleep_machine` — put target to sleep.
-- [ ] **11.3** `restart_machine` — restart target.
-- [ ] **11.4** `start_steam`.
-- [ ] **11.5** `start_llama_server` — persistent; parameters for model path, context size, GPU layers.
-- [ ] **11.6** Add SPDX license headers to all `.sh` and `.ps1` scripts. Extend the `insert-license` pre-commit hook with a second entry targeting `\.sh$` and `\.ps1$` (both use `#` comment style).
+- [x] **11.1** Built-ins live in `control_station_lite/server/builtin_scripts/` (packaged via `package-data`): a `<name>.sh`/`.ps1` per platform plus a shared `<name>.meta.yaml`. `server/core/builtin_scripts.py` discovers them and seeds one `scripts` row per platform file (name carries the extension). `csl-admin seed-scripts` (invoked from `setup.sh` after `create-admin`, attributing rows to the earliest admin) seeds **create-if-absent** — never modifies an existing row, so admin edits are never clobbered.
+- [x] **11.2** `sleep_machine` — `.sh` (Linux `systemctl suspend` / macOS `pmset sleepnow`) + `.ps1` (`SetSuspendState`).
+- [x] **11.3** `restart_machine` — `.sh` (`systemctl reboot` / `shutdown -r`) + `.ps1` (`Restart-Computer -Force`).
+- [x] **11.4** `start_steam` — `.ps1` (Windows; registry-resolved Steam path with `steam://` fallback).
+- [x] **11.5** `start_llama_server` — `.ps1` (Windows), persistent; params `model_path` (path, required), `context_size` (int, default 4096), `gpu_layers` (int, default 0) → `CSL_PARAM_*`; foreground `llama-server` so the agent supervises it.
+- [x] **11.6** SPDX headers on all `.sh`/`.ps1`; second `insert-license` pre-commit entry for `\.(sh|ps1)$` (`#` style, excludes `tests/`). Headerless built-in `.sh` carry a `# shellcheck shell=bash` directive (run via `bash`, no shebang).
 
 (Wake-on-LAN is built-in, not a script — see Phase 7.)
 

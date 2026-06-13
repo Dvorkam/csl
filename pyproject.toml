@@ -65,7 +65,7 @@ test = [
 include = ["control_station_lite*"]
 
 [tool.setuptools.package-data]
-"control_station_lite.server" = ["templates/**/*", "static/**/*"]
+"control_station_lite.server" = ["templates/**/*", "static/**/*", "builtin_scripts/**/*"]
 
 [tool.ruff]
 line-length = 100

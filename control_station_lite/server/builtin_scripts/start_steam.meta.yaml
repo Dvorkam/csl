@@ -1,0 +1,3 @@
+description: Launch the Steam client on the target (Windows).
+persistent: false
+tags: [apps, builtin]
