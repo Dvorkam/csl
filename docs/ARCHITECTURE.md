@@ -698,10 +698,11 @@ Volumes mounted: `/var/lib/control-station-lite/{db,scripts,secrets,certs,logs}`
 
 ## 10. Error handling and observability
 
-- Structured JSON logging from both server and agent, written to stdout (collected by Docker / systemd journal on the NAS side, captured to `logs/` on the agent side).
-- Correlation IDs on every request, propagated through agent calls so a single user action can be traced end-to-end.
+- Structured JSON logging on the server (`server/logging_config.py`): one JSON object per line to stdout (`timestamp`, `level`, `logger`, `message`, optional `request_id`, plus any `extra` fields and `exc_info`), collected by Docker / the systemd journal. Installed in `csl-server main()` with uvicorn `log_config=None`. The agent keeps its plain text logging; per-job output is captured to `logs/`.
+- Correlation IDs (`server/middleware.py`): a pure-ASGI `RequestIdMiddleware` assigns an `X-Request-ID` to every request (honouring an inbound one), binds it to a contextvar that the log formatter reads, echoes it on the response, and propagates it to agent calls via the same header — so one user action is traceable end-to-end.
 - Health endpoints: `/healthz` on both server and agent. The server's exposes basic info (version, DB reachable). The agent's reports running persistent jobs and idle time.
-- All exceptions in FastAPI surfaced as structured error responses with stable error codes.
+- Stable error codes (`server/core/errors.py`): `CslHTTPException` carries an `ErrorCode` from a versioned catalogue (auth, approval, agent-unreachable, validation); the handler returns the usual `detail` plus a machine-stable `code` field (and any structured `extra`). `RequestValidationError` responses also carry `code = validation.error`.
+- Audit log: every state-mutating API endpoint records an `AuditLog` row via `server/core/audit.py` `record_audit`; a route-table guard test enforces coverage. Admin-only read access at `GET /api/audit` and the web viewer (§8.12).
 
 ---
 

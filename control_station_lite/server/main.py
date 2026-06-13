@@ -29,6 +29,8 @@ from control_station_lite.server.api import (
     machines,
     scripts,
 )
+from control_station_lite.server.core.errors import install_error_handlers
+from control_station_lite.server.middleware import RequestIdMiddleware
 from control_station_lite.server.web import admin as web_admin
 from control_station_lite.server.web import auth as web_auth
 from control_station_lite.server.web import dashboard as web_dashboard
@@ -64,6 +66,7 @@ _EXPECTED_ENDPOINTS: set[tuple[str, str]] = {
     ("GET", "/api/jobs/{job_uuid}/stream"),
     ("GET", "/api/jobs"),
     ("POST", "/api/machines/{machine_id}/builtin/wol"),
+    ("GET", "/api/audit"),
 }
 
 
@@ -96,6 +99,12 @@ async def _lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="control-station-lite", lifespan=_lifespan)
 
+# Correlation-id middleware: outermost so every request (incl. errors) gets an id.
+app.add_middleware(RequestIdMiddleware)
+
+# Structured error responses with stable codes (ARCHITECTURE §10).
+install_error_handlers(app)
+
 app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="static")
 
 # Web (HTML) routes — included before API so /login takes priority over any future conflict
@@ -118,14 +127,27 @@ app.include_router(admin.router)
 def main() -> None:  # pragma: no cover
     import argparse
 
+    from control_station_lite.server.config import get_settings
+    from control_station_lite.server.logging_config import configure_logging
+
     parser = argparse.ArgumentParser(prog="csl-server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true", default=False)
     args = parser.parse_args()
+
+    # Structured JSON logging to stdout (ARCHITECTURE §10); pass log_config=None
+    # so uvicorn keeps our handler instead of installing its own dictConfig.
+    try:
+        log_level = get_settings().log_level
+    except Exception:
+        log_level = "INFO"
+    configure_logging(log_level)
+
     uvicorn.run(
         "control_station_lite.server.main:app",
         host=args.host,
         port=args.port,
         reload=args.reload,
+        log_config=None,
     )

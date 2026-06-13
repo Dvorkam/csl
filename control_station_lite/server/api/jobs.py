@@ -32,7 +32,9 @@ from control_station_lite.server.core.agent_client import (
     AgentClientError,
     AgentValidationError,
 )
+from control_station_lite.server.core.audit import record_audit
 from control_station_lite.server.core.crypto import decrypt
+from control_station_lite.server.core.errors import CslHTTPException, ErrorCode
 from control_station_lite.server.core.script_registry import (
     ScriptRegistryError,
     get_script_or_raise,
@@ -103,23 +105,28 @@ async def _get_job_or_404(job_uuid: str, session: AsyncSession) -> Job:
     return job
 
 
-def _approval_error_response(agent_state: str, script_name: str) -> HTTPException:
-    """Build a 409 HTTPException for non-approved script states."""
+def _approval_error_response(agent_state: str, script_name: str) -> CslHTTPException:
+    """Build a 409 CslHTTPException for non-approved script states."""
     if agent_state == ApprovalState.pending:
-        code = "pending_approval (new)"
+        approval_error = "pending_approval (new)"
+        error_code = ErrorCode.APPROVAL_PENDING
         msg = f"Script {script_name!r} is pending approval on this machine"
     elif agent_state == ApprovalState.update_pending:
-        code = "pending_approval (update)"
+        approval_error = "pending_approval (update)"
+        error_code = ErrorCode.APPROVAL_PENDING
         msg = f"Script {script_name!r} has a pending update awaiting approval"
     elif agent_state == ApprovalState.rejected:
-        code = "rejected"
+        approval_error = "rejected"
+        error_code = ErrorCode.APPROVAL_REJECTED
         msg = f"Script {script_name!r} was rejected on this machine"
     else:
-        code = agent_state
+        approval_error = agent_state
+        error_code = ErrorCode.APPROVAL_PENDING
         msg = f"Script {script_name!r} is not approved (state={agent_state!r})"
-    return HTTPException(
+    return CslHTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail={"approval_error": code, "agent_state": agent_state, "detail": msg},
+        code=error_code,
+        detail={"approval_error": approval_error, "agent_state": agent_state, "detail": msg},
     )
 
 
@@ -160,6 +167,16 @@ async def submit_job(
         await session.commit()
 
         if resolved != ApprovalState.approved:
+            await record_audit(
+                session,
+                action="job.submit",
+                target_type="machine",
+                target_id=machine_id,
+                result="rejected",
+                user_id=user.id,
+                details={"script": body.script_name, "agent_state": str(resolved)},
+                commit=True,
+            )
             raise _approval_error_response(resolved, body.script_name)
 
         request = JobRequest(
@@ -172,8 +189,10 @@ async def submit_job(
         try:
             agent_resp = await client.submit_job(request)
         except AgentValidationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+            raise CslHTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code=ErrorCode.VALIDATION_ERROR,
+                detail=str(exc),
             ) from exc
         except AgentApprovalError:
             # Agent's approved MD5 drifted from ours (or the on-disk file changed)
@@ -183,7 +202,11 @@ async def submit_job(
             await session.commit()
             raise _approval_error_response(resolved, body.script_name) from None
         except AgentClientError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+            raise CslHTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                code=ErrorCode.AGENT_UNREACHABLE,
+                detail=str(exc),
+            ) from exc
 
     assert agent_resp is not None
     job = Job(
@@ -199,6 +222,19 @@ async def submit_job(
         exit_code=agent_resp.exit_code,
     )
     session.add(job)
+    await record_audit(
+        session,
+        action="job.submit",
+        target_type="job",
+        target_id=job_id,
+        result="success",
+        user_id=user.id,
+        details={
+            "machine_id": machine_id,
+            "script": body.script_name,
+            "persistent": script.persistent,
+        },
+    )
     await session.commit()
     await session.refresh(job)
     return job
@@ -280,6 +316,15 @@ async def kill_job(
 
     job.status = JobStatus.killed
     job.ended_at = datetime.utcnow()
+    await record_audit(
+        session,
+        action="job.kill",
+        target_type="job",
+        target_id=job_uuid,
+        result="success",
+        user_id=user.id,
+        details={"machine_id": job.machine_id},
+    )
     await session.commit()
 
 

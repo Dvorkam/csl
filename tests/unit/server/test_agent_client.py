@@ -141,6 +141,18 @@ def test_auth_headers_bearer_when_token_set() -> None:
         assert client._auth_headers() == {"Authorization": "Bearer my-token"}
 
 
+def test_auth_headers_include_correlation_id() -> None:
+    from control_station_lite.server.logging_config import REQUEST_ID_HEADER, request_id_var
+
+    client = AgentClient(_machine(), os.urandom(32), _pool())
+    token = request_id_var.set("trace-xyz")
+    try:
+        headers = client._auth_headers()
+    finally:
+        request_id_var.reset(token)
+    assert headers == {REQUEST_ID_HEADER: "trace-xyz"}
+
+
 async def test_exit_closes_listener() -> None:
     pool = _pool()
     listener = pool.open_tunnel.return_value[0]

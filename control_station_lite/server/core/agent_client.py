@@ -20,6 +20,7 @@ from control_station_lite.server.config import get_settings
 from control_station_lite.server.core.crypto import decrypt
 from control_station_lite.server.core.ssh import SSHConnectionPool
 from control_station_lite.server.db.models import Machine
+from control_station_lite.server.logging_config import REQUEST_ID_HEADER, request_id_var
 from control_station_lite.shared.models import (
     AgentHealth,
     JobRequest,
@@ -122,12 +123,21 @@ class AgentClient:
         return self
 
     def _auth_headers(self) -> dict[str, str]:
-        """Bearer-token header for the agent API, or empty for legacy machines."""
+        """Bearer-token + correlation-id headers for the agent API.
+
+        The bearer is omitted for legacy machines with no stored token. The
+        correlation id (when a request is in flight) is propagated so one user
+        action can be traced across the control station and the agent.
+        """
+        headers: dict[str, str] = {}
         enc = self._machine.agent_token_encrypted
-        if not enc:
-            return {}
-        token = decrypt(enc, get_settings().read_master_key()).decode()
-        return {"Authorization": f"Bearer {token}"}
+        if enc:
+            token = decrypt(enc, get_settings().read_master_key()).decode()
+            headers["Authorization"] = f"Bearer {token}"
+        request_id = request_id_var.get()
+        if request_id is not None:
+            headers[REQUEST_ID_HEADER] = request_id
+        return headers
 
     async def __aexit__(self, *_: object) -> None:
         if self._http is not None and self._http_client_override is None:

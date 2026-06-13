@@ -12,7 +12,7 @@
 import hashlib
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Response, status
 from jose import JWTError
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -25,6 +25,8 @@ from control_station_lite.server.auth.jwt import (
 )
 from control_station_lite.server.auth.password import verify_password
 from control_station_lite.server.config import get_settings
+from control_station_lite.server.core.audit import record_audit
+from control_station_lite.server.core.errors import CslHTTPException, ErrorCode
 from control_station_lite.server.db.models import RefreshToken, User
 from control_station_lite.server.db.session import get_session
 
@@ -110,9 +112,17 @@ async def _validate_refresh_jti(session: AsyncSession, jti: str) -> None:
     )
     row = result.scalar_one_or_none()
     if row is None or row.revoked:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+        raise CslHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code=ErrorCode.AUTH_TOKEN_REVOKED,
+            detail="Token revoked",
+        )
     if row.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+        raise CslHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code=ErrorCode.AUTH_TOKEN_EXPIRED,
+            detail="Token expired",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -129,13 +139,33 @@ async def login(
     result = await session.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
     if user is None or user.disabled or not verify_password(body.password, user.password_hash):
-        raise HTTPException(
+        await record_audit(
+            session,
+            action="auth.login",
+            target_type="user",
+            target_id=user.id if user is not None else None,
+            result="failure",
+            user_id=user.id if user is not None else None,
+            details={"username": body.username},
+            commit=True,
+        )
+        raise CslHTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
+            code=ErrorCode.AUTH_INVALID_CREDENTIALS,
             detail="Incorrect username or password",
         )
     access_token = create_access_token(user.id, user.role)
     refresh_token, jti = create_refresh_token(user.id)
     await _store_refresh_token(session, user.id, jti, refresh_token)
+    await record_audit(
+        session,
+        action="auth.login",
+        target_type="user",
+        target_id=user.id,
+        result="success",
+        user_id=user.id,
+        details={"username": user.username},
+    )
     await session.commit()
     _set_refresh_cookie(response, refresh_token)
     return TokenResponse(access_token=access_token)
@@ -148,19 +178,29 @@ async def refresh(
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     if refresh_token is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
+        raise CslHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code=ErrorCode.AUTH_TOKEN_INVALID,
+            detail="No refresh token",
+        )
     try:
         token_data = decode_refresh_token(refresh_token)
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
+        raise CslHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code=ErrorCode.AUTH_TOKEN_INVALID,
+            detail="Invalid refresh token",
         ) from None
     await _validate_refresh_jti(session, token_data.jti)
 
     result = await session.execute(select(User).where(User.id == token_data.user_id))
     user = result.scalar_one_or_none()
     if user is None or user.disabled:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise CslHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code=ErrorCode.AUTH_TOKEN_INVALID,
+            detail="User not found",
+        )
 
     # Rotate: revoke old, issue new
     await _revoke_jti(session, token_data.jti)
@@ -178,11 +218,21 @@ async def logout(
     refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    user_id: int | None = None
     if refresh_token is not None:
         try:
             token_data = decode_refresh_token(refresh_token)
+            user_id = token_data.user_id
             await _revoke_jti(session, token_data.jti)
-            await session.commit()
         except JWTError:
             pass  # malformed token — clear cookie anyway
+    await record_audit(
+        session,
+        action="auth.logout",
+        target_type="user",
+        target_id=user_id,
+        result="success",
+        user_id=user_id,
+        commit=True,
+    )
     _clear_refresh_cookie(response)

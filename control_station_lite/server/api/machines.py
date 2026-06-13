@@ -26,10 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from control_station_lite.server.auth.dependencies import current_user, require_admin
 from control_station_lite.server.config import get_settings
+from control_station_lite.server.core.audit import record_audit
 from control_station_lite.server.core.crypto import decrypt, encrypt
 from control_station_lite.server.core.ssh import build_known_hosts, get_ssh_pool
 from control_station_lite.server.db.models import Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
+from control_station_lite.server.logging_config import REQUEST_ID_HEADER, request_id_var
 from control_station_lite.shared.models import AgentHealth
 from control_station_lite.shared.registration import RegistrationBundle
 from control_station_lite.shared.ssh_commands import CONFIG_READ_CMD
@@ -186,11 +188,15 @@ def _decrypt_private_key(machine: Machine) -> bytes:
 
 
 def _agent_auth_headers(machine: Machine) -> dict[str, str]:
-    """Bearer-token header for the agent API, or empty for legacy machines."""
-    if not machine.agent_token_encrypted:
-        return {}
-    token = decrypt(machine.agent_token_encrypted, get_settings().read_master_key()).decode()
-    return {"Authorization": f"Bearer {token}"}
+    """Bearer-token + correlation-id headers for direct agent calls."""
+    headers: dict[str, str] = {}
+    if machine.agent_token_encrypted:
+        token = decrypt(machine.agent_token_encrypted, get_settings().read_master_key()).decode()
+        headers["Authorization"] = f"Bearer {token}"
+    request_id = request_id_var.get()
+    if request_id is not None:
+        headers[REQUEST_ID_HEADER] = request_id
+    return headers
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +207,7 @@ def _agent_auth_headers(machine: Machine) -> dict[str, str]:
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=MachineOut)
 async def register_machine(
     body: RegisterMachineIn,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Machine:
     try:
@@ -246,6 +252,16 @@ async def register_machine(
         created_at=datetime.utcnow(),
     )
     session.add(machine)
+    await session.flush()
+    await record_audit(
+        session,
+        action="machine.register",
+        target_type="machine",
+        target_id=machine.id,
+        result="success",
+        user_id=admin.id,
+        details={"name": machine.name, "ssh_host": machine.ssh_host, "platform": machine.platform},
+    )
     await session.commit()
     await session.refresh(machine)
     return machine
@@ -281,7 +297,7 @@ async def get_machine(
 @router.delete("/{machine_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_machine(
     machine_id: int,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     await _get_machine_or_404(machine_id, session)
@@ -289,6 +305,15 @@ async def delete_machine(
     result = await session.execute(select(Machine).where(Machine.id == machine_id))
     machine = result.scalar_one()
     await session.delete(machine)
+    await record_audit(
+        session,
+        action="machine.delete",
+        target_type="machine",
+        target_id=machine_id,
+        result="success",
+        user_id=admin.id,
+        details={"name": machine.name},
+    )
     await session.commit()
 
 
@@ -306,6 +331,14 @@ async def add_bookmark(
     )
     if existing.scalar_one_or_none() is None:
         session.add(UserMachine(user_id=user.id, machine_id=machine_id))
+        await record_audit(
+            session,
+            action="machine.bookmark",
+            target_type="machine",
+            target_id=machine_id,
+            result="success",
+            user_id=user.id,
+        )
         await session.commit()
 
 
@@ -320,6 +353,14 @@ async def remove_bookmark(
         delete(UserMachine).where(
             UserMachine.user_id == user.id, UserMachine.machine_id == machine_id
         )
+    )
+    await record_audit(
+        session,
+        action="machine.unbookmark",
+        target_type="machine",
+        target_id=machine_id,
+        result="success",
+        user_id=user.id,
     )
     await session.commit()
 
