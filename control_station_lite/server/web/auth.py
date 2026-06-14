@@ -30,7 +30,12 @@ from control_station_lite.server.config import get_settings
 from control_station_lite.server.db.models import RefreshToken, User
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.web import templates
-from control_station_lite.server.web.deps import _ACCESS_COOKIE, pop_flash, set_flash
+from control_station_lite.server.web.deps import (
+    _ACCESS_COOKIE,
+    clear_flash,
+    read_flash,
+    redirect_with_flash,
+)
 
 router = APIRouter(tags=["web"])
 
@@ -87,15 +92,16 @@ async def login_page(request: Request) -> Response:
     """Render the login form.  Redirect to / if already authenticated."""
     if request.cookies.get(_ACCESS_COOKIE):
         return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
-    flash = pop_flash(request, Response())
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "login.html",
         {
-            "flash": flash,
+            "flash": read_flash(request),
             "error": None,
         },
     )
+    clear_flash(resp)
+    return resp
 
 
 @router.post("/login", include_in_schema=False)
@@ -149,7 +155,8 @@ async def logout(
         except JWTError:
             pass
 
-    response: Response = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    response = redirect_with_flash(
+        "/login", "You have been logged out.", "info", status_code=status.HTTP_302_FOUND
+    )
     _clear_auth_cookies(response)
-    set_flash(response, "You have been logged out.", "info")
     return response

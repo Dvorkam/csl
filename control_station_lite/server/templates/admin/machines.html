@@ -4,8 +4,9 @@
 {% block content %}
 <div class="page-header-row">
   <h1>Machine Management</h1>
+  <a class="btn btn-sm btn-primary" href="/admin/machines/new">+ Register machine</a>
 </div>
-<p class="admin-hint">Register new machines via <code>POST /api/machines</code> with a registration bundle from <code>csl-agent init</code>.</p>
+<p class="admin-hint">Register a machine with the bundle printed by <code>csl-agent init</code> on the target.</p>
 
 {% if not machines %}
 <div class="empty-state"><p>No machines registered yet.</p></div>

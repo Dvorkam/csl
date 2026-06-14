@@ -191,11 +191,14 @@ The admin panel also covers:
 - **Users** — list, enable/disable, change role (user/admin). You can't disable or
   demote your own account (a guard rail against locking yourself out). Create the
   first admin with `csl-admin create-admin`.
-- **Machines** — list and remove registered machines. Registration itself happens
-  via the API/onboarding flow using a target owner's registration bundle (see the
-  [target-owner guide](target-owner.md)); at registration the control station
-  pins the machine's SSH host key and shows its fingerprint for out-of-band
-  confirmation.
+- **Machines** — list, register, and remove machines. Click **Register machine**
+  and paste the registration bundle a target owner gave you (from `csl-agent
+  init` — see the [target-owner guide](target-owner.md)), along with the SSH host
+  and an optional name/user/MAC. The control station connects once over SSH to
+  verify the bundle, pins the machine's SSH host key, and then shows its
+  **fingerprint** — confirm that with the target owner out-of-band before
+  trusting the connection. (The same operation is available as `POST
+  /api/machines` for scripted onboarding.)
 - **Audit log** — every state-changing action (logins, machine add/remove, script
   create/edit/delete, job submit/kill, Wake-on-LAN) is recorded with who, what,
   target, result, and structured details. Filter by action, target type, or
