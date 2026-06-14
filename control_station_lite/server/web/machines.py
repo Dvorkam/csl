@@ -570,6 +570,10 @@ async def restage(
 
     try:
         async with AgentClient(machine, private_key, pool) as client:
+            # The agent is on-demand and may not be running yet (e.g. right after
+            # csl-agent init). Start it before staging, or the request hits a dead
+            # port. Mirrors run_submit and sync_states.
+            await client.ensure_agent_running()
             await client.stage_script(script.name, script.content, script.md5, script.meta_yaml)
             descriptor = await client.get_script_state(script.name)
             new_state = str(descriptor.state)
