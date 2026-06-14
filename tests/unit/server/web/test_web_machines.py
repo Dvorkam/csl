@@ -455,6 +455,9 @@ def test_restage_returns_badge_partial(
         async def __aexit__(self, *_: object) -> None:
             pass
 
+        async def ensure_agent_running(self) -> None:
+            pass
+
         async def stage_script(
             self, name: str, content: str, md5: str, meta_yaml: object
         ) -> StageScriptResponse:
@@ -476,6 +479,62 @@ def test_restage_returns_badge_partial(
     )
     assert resp.status_code == 200
     assert b"pending" in resp.content
+
+
+def test_restage_starts_agent_before_staging(
+    client: TestClient,
+    admin_user: User,
+    machine: Machine,
+    script: Script,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the on-demand agent must be started before staging, or a
+    fresh machine's Stage button hits a dead port and silently fails."""
+    import control_station_lite.server.web.machines as machines_mod
+    from control_station_lite.shared.models import (
+        ApprovalState,
+        ScriptDescriptor,
+        StageScriptResponse,
+    )
+
+    monkeypatch.setattr(machines_mod, "decrypt", lambda *_: b"fake-key")
+    monkeypatch.setattr(machines_mod, "get_ssh_pool", lambda: None)
+
+    calls: list[str] = []
+
+    class _MockClient:
+        def __init__(self, *a: object, **kw: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "_MockClient":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            pass
+
+        async def ensure_agent_running(self) -> None:
+            calls.append("ensure")
+
+        async def stage_script(
+            self, name: str, content: str, md5: str, meta_yaml: object
+        ) -> StageScriptResponse:
+            calls.append("stage")
+            return StageScriptResponse(name=name, state=ApprovalState.pending)
+
+        async def get_script_state(self, name: str) -> ScriptDescriptor:
+            return ScriptDescriptor(
+                name=name, state=ApprovalState.pending, approved_md5=None, pending_md5="abc123"
+            )
+
+    monkeypatch.setattr(machines_mod, "AgentClient", _MockClient)
+
+    resp = client.post(
+        f"/machines/{machine.id}/scripts/{script.name}/restage",
+        cookies=_auth(admin_user),
+    )
+    assert resp.status_code == 200
+    # ensure_agent_running must run, and before stage_script
+    assert calls == ["ensure", "stage"]
 
 
 def test_restage_404_for_unknown_script(
