@@ -1,0 +1,3 @@
+description: Reboot the target machine.
+persistent: false
+tags: [power, builtin]

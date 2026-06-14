@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
+# control-station-lite
+# Copyright (C) 2026 Michal Dvořák
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version, with an additional permission for
+# distribution through app stores (see LICENSE).
+
 # One-shot bootstrap for the control station on a NAS / Linux host.
 #
 # Idempotent: rerunning is safe and never destroys data. Existing secrets,
@@ -133,7 +142,17 @@ create_admin() {
         || warn "admin creation skipped/failed — run csl-admin create-admin later"
 }
 
-# --- 8. summary ------------------------------------------------------------
+# --- 8. built-in script catalogue ------------------------------------------
+seed_scripts() {
+    # Idempotent (create-if-absent): never clobbers admin edits. Needs an admin
+    # row to attribute the scripts to, so it runs after create_admin.
+    log "Seeding the built-in script catalogue"
+    "${DOCKER}" compose -f "${INSTALL_DIR}/deploy/docker-compose.yml" \
+        exec -T app csl-admin seed-scripts \
+        || warn "seed-scripts skipped/failed — run csl-admin seed-scripts later (needs an admin)"
+}
+
+# --- 9. summary ------------------------------------------------------------
 print_summary() {
     local host="${CSL_CERT_HOSTNAME:-$(hostname)}"
     log "Done. The control station should be reachable at: https://${host}/"
@@ -147,6 +166,7 @@ main() {
     stage_files
     install_service
     create_admin
+    seed_scripts
     print_summary
 }
 

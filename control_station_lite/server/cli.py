@@ -11,7 +11,8 @@
 
 """csl-admin CLI — server-side administrative commands.
 
-Currently only ``create-admin`` is implemented; further subcommands
+Subcommands: ``create-admin`` (interactive admin bootstrap) and ``seed-scripts``
+(idempotently load the packaged built-in script catalogue). Further commands
 (key rotation, DB maintenance) can be added here.
 """
 
@@ -65,10 +66,46 @@ async def _create_admin() -> None:
     print(f"Admin user {username!r} created.")
 
 
+def _cmd_seed_scripts(args: argparse.Namespace) -> None:  # noqa: ARG001
+    asyncio.run(_seed_scripts())
+
+
+async def _seed_scripts() -> None:
+    from sqlalchemy import select
+
+    from control_station_lite.server.core.builtin_scripts import seed_builtin_scripts
+    from control_station_lite.server.db.models import User
+    from control_station_lite.server.db.session import _session_factory
+
+    factory = _session_factory()
+    async with factory() as session:
+        # Built-in rows need an owner; attribute them to the earliest admin.
+        result = await session.execute(
+            select(User.id).where(User.role == "admin").order_by(User.id).limit(1)
+        )
+        admin_id = result.scalar_one_or_none()
+        if admin_id is None:
+            print(
+                "ERROR: no admin user found — run 'csl-admin create-admin' first",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        seeded = await seed_builtin_scripts(session, user_id=admin_id)
+        await session.commit()
+
+    print(f"Built-in scripts: {len(seeded.created)} added, {len(seeded.skipped)} already present.")
+    for name in seeded.created:
+        print(f"  + {name}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="csl-admin", description="control-station-lite admin")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("create-admin", help="Create an initial admin user interactively")
+    sub.add_parser("seed-scripts", help="Load the packaged built-in script catalogue (idempotent)")
     args = parser.parse_args()
     if args.command == "create-admin":
         _cmd_create_admin(args)
+    elif args.command == "seed-scripts":
+        _cmd_seed_scripts(args)
