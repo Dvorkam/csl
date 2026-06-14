@@ -207,10 +207,10 @@ Ship as default scripts that target owners can opt into. Each is a `.sh` (Linux/
 
 ## Phase 12 — Documentation
 
-- [ ] **12.1** End-user docs: how to add a machine, how to run scripts, how to interpret status.
-- [ ] **12.2** Target-owner docs: how to install the agent, how the approval workflow works, the `csl-agent approvals` and `csl-agent policy` CLI reference, how to audit and revoke access, where everything lives on disk.
-- [ ] **12.3** Admin docs: how to write a script, metadata reference, troubleshooting.
-- [ ] **12.4** Operator docs: how to back up the SQLite DB, rotate the master key, replace TLS certs.
+- [x] **12.1** End-user docs: how to add a machine, how to run scripts, how to interpret status. (`docs/guides/user.md`)
+- [x] **12.2** Target-owner docs: how to install the agent, how the approval workflow works, the `csl-agent approvals` and `csl-agent policy` CLI reference, how to audit and revoke access, where everything lives on disk. (`docs/guides/target-owner.md`)
+- [x] **12.3** Admin docs: how to write a script, metadata reference, troubleshooting. (`docs/guides/admin.md`)
+- [x] **12.4** Operator docs: how to back up the SQLite DB, rotate the master key, replace TLS certs. (`docs/guides/operator.md`)
 
 ---
 
