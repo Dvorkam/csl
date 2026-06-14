@@ -11,11 +11,16 @@
 
 """Admin web pages: script library, machine management, user management, audit log."""
 
-from fastapi import APIRouter, Depends, Form, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from control_station_lite.server.api.machines import (
+    MachineOut,
+    RegisterMachineIn,
+    register_machine_from_input,
+)
 from control_station_lite.server.core.script_registry import (
     ScriptRegistryError,
     create_script,
@@ -27,7 +32,12 @@ from control_station_lite.server.core.script_registry import (
 from control_station_lite.server.db.models import AuditLog, Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.web import templates
-from control_station_lite.server.web.deps import pop_flash, set_flash, web_require_admin
+from control_station_lite.server.web.deps import (
+    clear_flash,
+    read_flash,
+    redirect_with_flash,
+    web_require_admin,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin-web"])
 
@@ -42,17 +52,17 @@ _PAGE_SIZE = 50
 @router.get("/scripts", include_in_schema=False)
 async def admin_scripts(
     request: Request,
-    response: Response,
     user: User = Depends(web_require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     scripts = await list_scripts(session)
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "admin/scripts.html",
-        {"user": user, "scripts": scripts, "flash": flash},
+        {"user": user, "scripts": scripts, "flash": read_flash(request)},
     )
+    clear_flash(resp)
+    return resp
 
 
 @router.get("/scripts/new", include_in_schema=False)
@@ -70,7 +80,6 @@ async def admin_script_new_form(
 @router.post("/scripts/new", include_in_schema=False)
 async def admin_script_new_submit(
     request: Request,
-    response: Response,
     name: str = Form(...),
     content: str = Form(...),
     meta_yaml: str = Form(default=""),
@@ -97,8 +106,7 @@ async def admin_script_new_submit(
             },
             status_code=422,
         )
-    set_flash(response, f"Script '{name}' created.", "success")
-    return RedirectResponse("/admin/scripts", status_code=303)
+    return redirect_with_flash("/admin/scripts", f"Script '{name}' created.", "success")
 
 
 @router.get("/scripts/{name}/edit", include_in_schema=False)
@@ -123,7 +131,6 @@ async def admin_script_edit_form(
 async def admin_script_edit_submit(
     name: str,
     request: Request,
-    response: Response,
     content: str = Form(...),
     meta_yaml: str = Form(default=""),
     user: User = Depends(web_require_admin),
@@ -147,24 +154,21 @@ async def admin_script_edit_submit(
             {"user": user, "script": script, "error": str(exc)},
             status_code=422,
         )
-    set_flash(response, f"Script '{script.name}' updated.", "success")
-    return RedirectResponse("/admin/scripts", status_code=303)
+    return redirect_with_flash("/admin/scripts", f"Script '{script.name}' updated.", "success")
 
 
 @router.post("/scripts/{name}/delete", include_in_schema=False)
 async def admin_script_delete(
     name: str,
-    response: Response,
     user: User = Depends(web_require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     try:
         await delete_script(name, session)
         await session.commit()
-        set_flash(response, f"Script '{name}' deleted.", "success")
     except ScriptRegistryError:
-        set_flash(response, f"Script '{name}' not found.", "error")
-    return RedirectResponse("/admin/scripts", status_code=303)
+        return redirect_with_flash("/admin/scripts", f"Script '{name}' not found.", "error")
+    return redirect_with_flash("/admin/scripts", f"Script '{name}' deleted.", "success")
 
 
 # ---------------------------------------------------------------------------
@@ -175,38 +179,99 @@ async def admin_script_delete(
 @router.get("/machines", include_in_schema=False)
 async def admin_machines(
     request: Request,
-    response: Response,
     user: User = Depends(web_require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     result = await session.execute(select(Machine).order_by(Machine.name))
     machines = list(result.scalars().all())
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "admin/machines.html",
-        {"user": user, "machines": machines, "flash": flash},
+        {"user": user, "machines": machines, "flash": read_flash(request)},
+    )
+    clear_flash(resp)
+    return resp
+
+
+@router.get("/machines/new", include_in_schema=False)
+async def admin_machine_new_form(
+    request: Request,
+    user: User = Depends(web_require_admin),
+) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "admin/machine_new.html",
+        {"user": user, "error": None, "form": {"ssh_port": 22}},
+    )
+
+
+@router.post("/machines/new", include_in_schema=False)
+async def admin_machine_new_submit(
+    request: Request,
+    bundle: str = Form(...),
+    name: str = Form(...),
+    ssh_host: str = Form(...),
+    ssh_port: int = Form(default=22),
+    ssh_user: str = Form(default=""),
+    mac_address: str = Form(default=""),
+    user: User = Depends(web_require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    reg = RegisterMachineIn(
+        bundle=bundle.strip(),
+        name=name.strip(),
+        ssh_host=ssh_host.strip(),
+        ssh_port=ssh_port,
+        ssh_user=ssh_user.strip() or None,
+        mac_address=mac_address.strip() or None,
+    )
+    try:
+        machine = await register_machine_from_input(reg, user.id, session)
+    except HTTPException as exc:
+        # No explicit rollback needed: the helper commits only on success, and the
+        # request-scoped session (get_session) rolls back any open read transaction
+        # when it closes.
+        return templates.TemplateResponse(
+            request,
+            "admin/machine_new.html",
+            {
+                "user": user,
+                "error": exc.detail,
+                "form": {
+                    "bundle": bundle,
+                    "name": name,
+                    "ssh_host": ssh_host,
+                    "ssh_port": ssh_port,
+                    "ssh_user": ssh_user,
+                    "mac_address": mac_address,
+                },
+            },
+            status_code=422,
+        )
+    fingerprint = MachineOut.model_validate(machine).ssh_host_key_fingerprint
+    return redirect_with_flash(
+        "/admin/machines",
+        f"Machine '{machine.name}' registered. Confirm this SSH host-key "
+        f"fingerprint with the target owner out-of-band: {fingerprint}",
+        "success",
     )
 
 
 @router.post("/machines/{machine_id}/delete", include_in_schema=False)
 async def admin_machine_delete(
     machine_id: int,
-    response: Response,
     user: User = Depends(web_require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     result = await session.execute(select(Machine).where(Machine.id == machine_id))
     machine = result.scalar_one_or_none()
     if machine is None:
-        set_flash(response, "Machine not found.", "error")
-        return RedirectResponse("/admin/machines", status_code=303)
+        return redirect_with_flash("/admin/machines", "Machine not found.", "error")
     # Remove bookmarks first (FK)
     await session.execute(delete(UserMachine).where(UserMachine.machine_id == machine_id))
     await session.delete(machine)
     await session.commit()
-    set_flash(response, f"Machine '{machine.name}' deleted.", "success")
-    return RedirectResponse("/admin/machines", status_code=303)
+    return redirect_with_flash("/admin/machines", f"Machine '{machine.name}' deleted.", "success")
 
 
 # ---------------------------------------------------------------------------
@@ -217,65 +282,58 @@ async def admin_machine_delete(
 @router.get("/users", include_in_schema=False)
 async def admin_users(
     request: Request,
-    response: Response,
     user: User = Depends(web_require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     result = await session.execute(select(User).order_by(User.username))
     users = list(result.scalars().all())
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "admin/users.html",
-        {"user": user, "users": users, "flash": flash},
+        {"user": user, "users": users, "flash": read_flash(request)},
     )
+    clear_flash(resp)
+    return resp
 
 
 @router.post("/users/{user_id}/toggle", include_in_schema=False)
 async def admin_user_toggle(
     user_id: int,
-    response: Response,
     current_admin: User = Depends(web_require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     result = await session.execute(select(User).where(User.id == user_id))
     target = result.scalar_one_or_none()
     if target is None:
-        set_flash(response, "User not found.", "error")
-        return RedirectResponse("/admin/users", status_code=303)
+        return redirect_with_flash("/admin/users", "User not found.", "error")
     if target.id == current_admin.id:
-        set_flash(response, "Cannot disable your own account.", "error")
-        return RedirectResponse("/admin/users", status_code=303)
+        return redirect_with_flash("/admin/users", "Cannot disable your own account.", "error")
     target.disabled = not target.disabled
     await session.commit()
     state = "disabled" if target.disabled else "enabled"
-    set_flash(response, f"User '{target.username}' {state}.", "success")
-    return RedirectResponse("/admin/users", status_code=303)
+    return redirect_with_flash("/admin/users", f"User '{target.username}' {state}.", "success")
 
 
 @router.post("/users/{user_id}/role", include_in_schema=False)
 async def admin_user_role(
     user_id: int,
-    response: Response,
     role: str = Form(...),
     current_admin: User = Depends(web_require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     if role not in ("admin", "user"):
-        set_flash(response, "Invalid role.", "error")
-        return RedirectResponse("/admin/users", status_code=303)
+        return redirect_with_flash("/admin/users", "Invalid role.", "error")
     result = await session.execute(select(User).where(User.id == user_id))
     target = result.scalar_one_or_none()
     if target is None:
-        set_flash(response, "User not found.", "error")
-        return RedirectResponse("/admin/users", status_code=303)
+        return redirect_with_flash("/admin/users", "User not found.", "error")
     if target.id == current_admin.id and role != "admin":
-        set_flash(response, "Cannot demote your own account.", "error")
-        return RedirectResponse("/admin/users", status_code=303)
+        return redirect_with_flash("/admin/users", "Cannot demote your own account.", "error")
     target.role = role
     await session.commit()
-    set_flash(response, f"User '{target.username}' role set to '{role}'.", "success")
-    return RedirectResponse("/admin/users", status_code=303)
+    return redirect_with_flash(
+        "/admin/users", f"User '{target.username}' role set to '{role}'.", "success"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +344,6 @@ async def admin_user_role(
 @router.get("/audit", include_in_schema=False)
 async def admin_audit(
     request: Request,
-    response: Response,
     action: str | None = None,
     target_type: str | None = None,
     username: str | None = None,
@@ -318,8 +375,7 @@ async def admin_audit(
         select(AuditLog.target_type).distinct().order_by(AuditLog.target_type)
     )
 
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "admin/audit.html",
         {
@@ -332,6 +388,8 @@ async def admin_audit(
             "filter_username": username or "",
             "actions": [r[0] for r in actions_res.all()],
             "target_types": [r[0] for r in target_types_res.all()],
-            "flash": flash,
+            "flash": read_flash(request),
         },
     )
+    clear_flash(resp)
+    return resp

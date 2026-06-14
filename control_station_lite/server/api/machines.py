@@ -252,12 +252,18 @@ def _agent_auth_headers(machine: Machine) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=MachineOut)
-async def register_machine(
+async def register_machine_from_input(
     body: RegisterMachineIn,
-    admin: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
+    admin_id: int,
+    session: AsyncSession,
 ) -> Machine:
+    """Decode a bundle, test the connection, and persist a new Machine.
+
+    Shared by the JSON API endpoint and the admin web form. Raises
+    ``HTTPException`` / ``CslHTTPException`` on failure (bundle decode, version
+    mismatch, duplicate name, connection test); callers map these to either an
+    HTTP response or a flash message.
+    """
     try:
         bundle = RegistrationBundle.decode(body.bundle)
     except ValueError as exc:
@@ -309,12 +315,21 @@ async def register_machine(
         target_type="machine",
         target_id=machine.id,
         result="success",
-        user_id=admin.id,
+        user_id=admin_id,
         details={"name": machine.name, "ssh_host": machine.ssh_host, "platform": machine.platform},
     )
     await session.commit()
     await session.refresh(machine)
     return machine
+
+
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=MachineOut)
+async def register_machine(
+    body: RegisterMachineIn,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> Machine:
+    return await register_machine_from_input(body, admin.id, session)
 
 
 @router.get("", response_model=list[MachineOut])

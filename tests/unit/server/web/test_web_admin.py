@@ -321,6 +321,123 @@ class TestAdminMachineDelete:
         resp = client.post("/admin/machines/9999/delete", cookies=_auth(admin_user))
         assert resp.status_code == 303
 
+    def test_list_has_register_button(self, client: TestClient, admin_user: User) -> None:
+        resp = client.get("/admin/machines", cookies=_auth(admin_user))
+        assert b"/admin/machines/new" in resp.content
+
+
+def _fake_machine() -> Machine:
+    """A populated (uncommitted) Machine for the success-path mock."""
+    return Machine(
+        id=1,
+        name="gaming-pc",
+        ssh_host="10.0.0.5",
+        ssh_port=22,
+        ssh_user="me",
+        ssh_key_encrypted=b"enc",
+        key_fingerprint="SHA256:abc",
+        ssh_host_key="ssh-ed25519 " + base64.b64encode(b"\x00" * 32).decode(),
+        agent_token_encrypted=b"tok",
+        agent_port=36717,
+        scripts_dir="/home/me/.csl/scripts",
+        platform="linux",
+        mac_address=None,
+        created_at=datetime.utcnow(),
+    )
+
+
+class TestAdminMachineRegister:
+    def test_form_200_for_admin(self, client: TestClient, admin_user: User) -> None:
+        resp = client.get("/admin/machines/new", cookies=_auth(admin_user))
+        assert resp.status_code == 200
+        assert b"Register a machine" in resp.content
+
+    def test_form_403_for_regular_user(self, client: TestClient, regular_user: User) -> None:
+        resp = client.get("/admin/machines/new", cookies=_auth(regular_user))
+        assert resp.status_code == 403
+
+    def test_form_redirects_without_auth(self, client: TestClient) -> None:
+        resp = client.get("/admin/machines/new")
+        assert resp.status_code == 302
+        assert "/login" in resp.headers["location"]
+
+    def test_submit_403_for_regular_user(self, client: TestClient, regular_user: User) -> None:
+        resp = client.post(
+            "/admin/machines/new",
+            data={"bundle": "x", "name": "n", "ssh_host": "h"},
+            cookies=_auth(regular_user),
+        )
+        assert resp.status_code == 403
+
+    def test_submit_success_redirects_with_fingerprint_flash(
+        self, client: TestClient, admin_user: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        mock = AsyncMock(return_value=_fake_machine())
+        monkeypatch.setattr(
+            "control_station_lite.server.web.admin.register_machine_from_input", mock
+        )
+        resp = client.post(
+            "/admin/machines/new",
+            data={
+                "bundle": "validbundle",
+                "name": "gaming-pc",
+                "ssh_host": "10.0.0.5",
+                "ssh_port": "22",
+                "ssh_user": "me",
+                "mac_address": "",
+            },
+            cookies=_auth(admin_user),
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/admin/machines"
+        # flash carries the host-key fingerprint for out-of-band confirmation
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "_flash" in set_cookie
+        assert "SHA256" in set_cookie
+        # the parsed form values reached the registration helper
+        assert mock.await_count == 1
+        reg = mock.await_args.args[0]
+        assert reg.name == "gaming-pc"
+        assert reg.ssh_host == "10.0.0.5"
+        assert reg.ssh_user == "me"
+        assert reg.mac_address is None  # empty string normalised to None
+
+    def test_submit_duplicate_name_rerenders_with_error(
+        self, client: TestClient, admin_user: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        from fastapi import HTTPException
+
+        mock = AsyncMock(
+            side_effect=HTTPException(
+                status_code=409, detail="Machine with name 'dup' already exists"
+            )
+        )
+        monkeypatch.setattr(
+            "control_station_lite.server.web.admin.register_machine_from_input", mock
+        )
+        resp = client.post(
+            "/admin/machines/new",
+            data={"bundle": "b", "name": "dup", "ssh_host": "h"},
+            cookies=_auth(admin_user),
+        )
+        assert resp.status_code == 422
+        assert b"already exists" in resp.content
+        assert b"dup" in resp.content  # entered name preserved in the re-rendered form
+
+    def test_submit_invalid_bundle_shows_error(self, client: TestClient, admin_user: User) -> None:
+        # No mock: exercises the real RegistrationBundle.decode failure path.
+        resp = client.post(
+            "/admin/machines/new",
+            data={"bundle": "not-a-valid-bundle", "name": "x", "ssh_host": "h"},
+            cookies=_auth(admin_user),
+        )
+        assert resp.status_code == 422
+        assert b"flash-error" in resp.content
+
 
 # ---------------------------------------------------------------------------
 # 8.11 — User management
@@ -442,3 +559,28 @@ class TestAdminAuditLog:
     def test_pagination_page_param(self, client: TestClient, admin_user: User) -> None:
         resp = client.get("/admin/audit?page=2", cookies=_auth(admin_user))
         assert resp.status_code == 200
+
+
+class TestFlashOnRedirect:
+    """Regression: flash must be set on the RETURNED response, not an injected
+    Response param (which FastAPI discards when a Response is returned)."""
+
+    def test_redirect_action_sets_flash_cookie(self, client: TestClient, admin_user: User) -> None:
+        # The not-found delete path returns a redirect with an error flash.
+        resp = client.post("/admin/scripts/no_such/delete", cookies=_auth(admin_user))
+        assert resp.status_code == 303
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "_flash" in set_cookie
+        assert "error|" in set_cookie
+        assert "not found" in set_cookie
+
+    def test_get_page_clears_flash_cookie(self, client: TestClient, admin_user: User) -> None:
+        # A page that displays a flash must also clear it (one-shot).
+        resp = client.get(
+            "/admin/scripts",
+            cookies={**_auth(admin_user), "_flash": "success|done"},
+        )
+        assert resp.status_code == 200
+        set_cookie = resp.headers.get("set-cookie", "").lower()
+        assert "_flash" in set_cookie
+        assert "max-age=0" in set_cookie

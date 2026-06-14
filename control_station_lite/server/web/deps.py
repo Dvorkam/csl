@@ -16,6 +16,7 @@ so they need a separate dependency from the JSON API layer.
 """
 
 from fastapi import Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,16 +68,40 @@ async def web_require_admin(user: User = Depends(web_current_user)) -> User:
     return user
 
 
-def pop_flash(request: Request, response: Response) -> tuple[str, str] | None:
-    """Read the ``_flash`` cookie, schedule its deletion, and return (category, message)."""
+def read_flash(request: Request) -> tuple[str, str] | None:
+    """Return the (category, message) from the ``_flash`` cookie, or None.
+
+    Read-only: clearing the cookie must happen on the response the route actually
+    returns (see :func:`clear_flash`). An injected ``Response`` parameter is
+    discarded by FastAPI when the route returns a ``Response`` object, so cookie
+    operations must target the returned object, never an injected one.
+    """
     raw = request.cookies.get("_flash")
-    response.delete_cookie("_flash", samesite="strict")
     if raw and "|" in raw:
         cat, msg = raw.split("|", 1)
         return cat, msg
     return None
 
 
+def clear_flash(response: Response) -> None:
+    """Delete the ``_flash`` cookie on the response being returned."""
+    response.delete_cookie("_flash", samesite="strict")
+
+
 def set_flash(response: Response, message: str, category: str = "info") -> None:
-    """Write a one-shot flash message into the ``_flash`` cookie."""
+    """Write a one-shot flash message into the ``_flash`` cookie.
+
+    ``response`` must be the object the route returns (e.g. the ``RedirectResponse``),
+    not an injected ``Response`` parameter — those are discarded. Prefer
+    :func:`redirect_with_flash` for the common redirect-then-flash case.
+    """
     response.set_cookie("_flash", f"{category}|{message}", httponly=True, samesite="strict")
+
+
+def redirect_with_flash(
+    url: str, message: str, category: str = "info", status_code: int = 303
+) -> RedirectResponse:
+    """Build a redirect that carries a one-shot flash message."""
+    response = RedirectResponse(url, status_code=status_code)
+    set_flash(response, message, category)
+    return response

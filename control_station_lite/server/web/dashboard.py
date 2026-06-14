@@ -24,7 +24,7 @@ from control_station_lite.server.core.ssh import build_known_hosts
 from control_station_lite.server.db.models import Machine, User, UserMachine
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.web import templates
-from control_station_lite.server.web.deps import pop_flash, web_current_user
+from control_station_lite.server.web.deps import clear_flash, read_flash, web_current_user
 
 router = APIRouter(tags=["web"])
 
@@ -32,7 +32,6 @@ router = APIRouter(tags=["web"])
 @router.get("/", include_in_schema=False)
 async def dashboard(
     request: Request,
-    response: Response,
     user: User = Depends(web_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
@@ -48,16 +47,17 @@ async def dashboard(
         )
         machines = list(result.scalars().all())
 
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "dashboard.html",
         {
             "user": user,
             "machines": machines,
-            "flash": flash,
+            "flash": read_flash(request),
         },
     )
+    clear_flash(resp)
+    return resp
 
 
 @router.get("/machines/{machine_id}/ping-badge", include_in_schema=False)

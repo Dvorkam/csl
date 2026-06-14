@@ -25,6 +25,30 @@ _EXEMPT: set[tuple[str, str]] = {
 _AUDIT_MARKER = "record_audit"
 
 
+def _audit_source(endpoint: object) -> str:
+    """Source of the endpoint plus any same-module helper it references by name.
+
+    Endpoints may delegate the actual mutation (and its ``record_audit`` call) to
+    a shared helper in the same module (e.g. ``register_machine`` →
+    ``register_machine_from_input``). Following one level keeps the guard honest
+    for that pattern without weakening it to module-wide scope.
+    """
+    src = inspect.getsource(endpoint)  # type: ignore[arg-type]
+    module = inspect.getmodule(endpoint)
+    if module is None:
+        return src
+    for name in dir(module):
+        if name == getattr(endpoint, "__name__", None) or name not in src:
+            continue
+        obj = getattr(module, name)
+        if inspect.isfunction(obj) and inspect.getmodule(obj) is module:
+            try:
+                src += "\n" + inspect.getsource(obj)
+            except OSError:
+                pass
+    return src
+
+
 def _mutating_api_routes() -> list[tuple[str, str, object]]:
     found: list[tuple[str, str, object]] = []
     for route in app.routes:
@@ -43,8 +67,7 @@ def test_every_mutating_route_is_audited() -> None:
     for method, path, endpoint in _mutating_api_routes():
         if (method, path) in _EXEMPT:
             continue
-        source = inspect.getsource(endpoint)
-        if _AUDIT_MARKER not in source:
+        if _AUDIT_MARKER not in _audit_source(endpoint):
             missing.append(f"{method} {path}")
     assert not missing, (
         "These mutating routes are not audit-instrumented (call record_audit or "

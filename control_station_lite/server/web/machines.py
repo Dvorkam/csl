@@ -18,7 +18,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +41,12 @@ from control_station_lite.server.db.models import (
 )
 from control_station_lite.server.db.session import get_session
 from control_station_lite.server.web import templates
-from control_station_lite.server.web.deps import pop_flash, set_flash, web_current_user
+from control_station_lite.server.web.deps import (
+    clear_flash,
+    read_flash,
+    redirect_with_flash,
+    web_current_user,
+)
 from control_station_lite.shared.models import ApprovalState, JobRequest, JobStatus
 from control_station_lite.shared.script_meta import ScriptMetaError, parse_meta_yaml
 
@@ -103,7 +108,6 @@ def _approval_msg(state: str, script_name: str) -> str:
 async def machine_detail(
     machine_id: int,
     request: Request,
-    response: Response,
     show_all: bool = False,
     user: User = Depends(web_current_user),
     session: AsyncSession = Depends(get_session),
@@ -151,8 +155,7 @@ async def machine_detail(
     )
     running_jobs = list(jobs_res.scalars().all())
 
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "machine_detail.html",
         {
@@ -161,9 +164,11 @@ async def machine_detail(
             "script_states": script_states,
             "running_jobs": running_jobs,
             "show_all": show_all,
-            "flash": flash,
+            "flash": read_flash(request),
         },
     )
+    clear_flash(resp)
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -307,9 +312,7 @@ async def run_submit(
     session.add(job)
     await session.commit()
 
-    resp = RedirectResponse(f"/jobs/{job_id}", status_code=303)
-    set_flash(resp, f"Job started: {script_name}", "success")
-    return resp
+    return redirect_with_flash(f"/jobs/{job_id}", f"Job started: {script_name}", "success")
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +633,6 @@ _JOB_PAGE_SIZE = 50
 @router.get("/jobs", include_in_schema=False)
 async def jobs_list(
     request: Request,
-    response: Response,
     machine_id: str | None = None,
     script_name: str | None = None,
     status: str | None = None,
@@ -722,8 +724,7 @@ async def jobs_list(
         for job, machine, script in rows
     ]
 
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "jobs.html",
         {
@@ -740,9 +741,11 @@ async def jobs_list(
             "page_size": _JOB_PAGE_SIZE,
             "has_prev": page > 1,
             "has_next": offset + _JOB_PAGE_SIZE < total,
-            "flash": flash,
+            "flash": read_flash(request),
         },
     )
+    clear_flash(resp)
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -754,7 +757,6 @@ async def jobs_list(
 async def job_detail(
     job_uuid: str,
     request: Request,
-    response: Response,
     user: User = Depends(web_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
@@ -768,8 +770,7 @@ async def job_detail(
         script_res = await session.execute(select(Script).where(Script.id == job.script_id))
         script = script_res.scalar_one_or_none()
 
-    flash = pop_flash(request, response)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "job_detail.html",
         {
@@ -777,9 +778,11 @@ async def job_detail(
             "job": job,
             "machine": machine,
             "script": script,
-            "flash": flash,
+            "flash": read_flash(request),
         },
     )
+    clear_flash(resp)
+    return resp
 
 
 @router.get("/jobs/{job_uuid}/stream", include_in_schema=False)
