@@ -22,6 +22,16 @@ You want to remotely run scripts on your home server, gaming PC, or NAS. SSH giv
 
 ---
 
+## Why you'd want it
+
+- **A single dashboard** for every machine on your LAN — wake them, run scripts, stream logs, kill jobs, all from a browser.
+- **You stay in control of your own hardware.** Handing out a registration bundle is not handing out a shell. The control-station's SSH key is locked to a forced command; it can only talk to an approval-gated agent, never open a shell.
+- **No attack surface at rest.** No agent port is ever exposed; everything rides an SSH tunnel. The agent isn't even running until something needs it.
+- **Batteries included.** Wake-on-LAN, sleep/restart, Steam, a llama.cpp server — a starter catalogue ships in the box. Add your own with a shell script and a few lines of YAML.
+- **Cross-platform targets** — Linux, Windows, and macOS.
+
+---
+
 ## How it works
 
 ```
@@ -50,161 +60,24 @@ The control station never gets a shell on the target — it only talks to the ag
 
 ---
 
-## Agent quick-start
+## Get started
 
-The agent runs on each target machine. Install it once; the control station starts it on demand over SSH.
+Pick the guide for what you're doing — each has the full step-by-step:
 
-### 1. Install
+- **Run the control station** (NAS / home server) → [Operator guide](docs/guides/operator.md)
+  ```bash
+  sudo scripts/setup.sh        # idempotent bootstrap: data dirs, secrets, TLS, the stack
+  ```
+- **Make a machine controllable** (install the agent) → [Target-owner guide](docs/guides/target-owner.md)
+  ```bash
+  pip install control-station-lite[agent]
+  csl-agent setup && csl-agent init     # prints a registration bundle for the admin
+  ```
+- **Use the web UI** → [User guide](docs/guides/user.md)
+- **Manage scripts, users, machines** → [Admin guide](docs/guides/admin.md)
 
-Requires Python 3.11+.
-
-```bash
-pip install control-station-lite[agent]
-```
-
-### 2. Check SSH prerequisites
-
-```bash
-csl-agent setup
-```
-
-Checks that an SSH server is installed and running, and attempts to fix common issues automatically.
-
-### 3. Initialise
-
-```bash
-csl-agent init
-```
-
-This will:
-- Create the agent directory structure (`~/.csl/`)
-- Generate an Ed25519 SSH keypair
-- Append the public key to your `authorized_keys`
-- Write a default `config.yaml`
-- Install the service (systemd / Task Scheduler / launchd)
-- Print a **registration bundle** — a base64 blob you hand to the control station admin
-
-Copy the registration bundle and give it to whoever manages the control station. That's the entire setup.
-
-### 4. Approve scripts
-
-Once connected, the control station will push scripts for your review. Manage them with:
-
-```bash
-csl-agent approvals list               # see all scripts and their state
-csl-agent approvals show <name>        # read the script content
-csl-agent approvals diff <name>        # diff an updated version against approved
-csl-agent approvals approve <name>     # approve — script can now run
-csl-agent approvals reject <name>      # reject — script will not run
-csl-agent approvals clear <name>       # remove a script entirely
-```
-
-Auto-approve trusted scripts so they don't need manual review on every update:
-
-```bash
-csl-agent policy auto-approve sleep_machine
-csl-agent policy show
-csl-agent policy manual sleep_machine   # revoke auto-approval
-```
-
----
-
-## Control station quick-start
-
-The control station is the always-on component (typically a NAS or home server) that hosts the web UI.
-
-### Docker (recommended)
-
-From a checkout on the host, `scripts/setup.sh` bootstraps everything (data dirs
-under `/var/lib/control-station-lite`, secrets, a self-signed TLS cert, the
-systemd unit) and brings up the `deploy/docker-compose.yml` stack — the app
-behind nginx (TLS, auth rate-limiting), with migrations run automatically on
-start. Rerunning it is safe and never destroys data.
-
-```bash
-sudo scripts/setup.sh
-```
-
-> **Note:** the image is built locally for now; a published image and a tagged
-> PyPI release (Tasks 10.7–10.8) are still pending, as is the verified
-> clean-NAS end-to-end run (10.10). To run without Docker, follow the steps below.
-
-### 1. Install
-
-```bash
-pip install control-station-lite[server]
-```
-
-### 2. Create secrets
-
-```bash
-# JWT signing key
-openssl rand -hex 64 > secrets/jwt.key
-
-# Master encryption key (must be exactly 32 bytes, base64-encoded)
-python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())" > secrets/master.key
-```
-
-### 3. Configure
-
-Set environment variables (or use a `.env` file):
-
-```bash
-export CSL_JWT_KEY_PATH=secrets/jwt.key
-export CSL_MASTER_KEY_PATH=secrets/master.key
-export CSL_DATABASE_URL=sqlite+aiosqlite:///data/csl.db   # default
-```
-
-### 4. Initialise the database and create an admin user
-
-```bash
-alembic upgrade head        # runs Alembic migrations
-csl-admin create-admin      # prompts for username + password
-```
-
-### 5. Start
-
-```bash
-csl-server
-```
-
-The web UI is available at `http://localhost:8000`.
-
----
-
-## Web UI features
-
-- **Dashboard** — machine list with live SSH reachability indicator
-- **Machine detail** — approval state for every script, Wake-on-LAN, running persistent jobs
-- **Script approval flow** — badge per script: `approved` / `pending` / `update_pending` / `rejected` / `approved_stale`; one-click stage/re-stage; auto-refresh on page open (single SSH tunnel per machine)
-- **Script run dialog** — dynamic form built from script metadata (string / int / float / bool / choice params); approval errors surfaced inline
-- **Live log viewer** — SSE-based streaming, auto-scrolling, kill button for persistent jobs
-- **Job history** — filterable list of all past runs, links to log viewer
-- **Admin panel** — script library editor, machine management, user management, audit log viewer
-- **Built-in scripts** — `setup.sh` seeds a starter catalogue (`sleep_machine`, `restart_machine`, `start_steam`, `start_llama_server`) into the library; re-running `csl-admin seed-scripts` is idempotent and never overwrites your edits. Target owners still approve each one before it can run.
-
----
-
-## Agent configuration
-
-`csl-agent init` writes `~/.csl/config.yaml` with sensible defaults. Edit it to customise:
-
-```yaml
-agent:
-  listen_port: 36717               # what the agent listens on (loopback only)
-  idle_timeout_seconds: 600        # shut down after 10 min of no activity
-  lifecycle_check_interval_seconds: 10
-  log_tail_lines: 1000             # lines replayed when reconnecting to a log stream
-
-approval_policy:
-  auto_approve: []                 # script names trusted for automatic approval
-
-advanced:
-  # Windows only — override if your SSH install is non-standard
-  windows_admin_authorized_keys_path: C:/ProgramData/ssh/administrators_authorized_keys
-```
-
-All paths support `~` expansion. Unknown fields are logged and ignored.
+All guides live in **[docs/guides/](docs/guides/)**. For the full design, see
+[docs/dev/ARCHITECTURE.md](docs/dev/ARCHITECTURE.md).
 
 ---
 

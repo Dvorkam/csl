@@ -1,6 +1,6 @@
 # Locked architectural decisions
 
-These are settled. Don't relitigate without updating `docs/ARCHITECTURE.md` in the same PR.
+These are settled. Don't relitigate without updating `docs/dev/ARCHITECTURE.md` in the same PR.
 
 - **Agent is the only channel.** No direct shell execution over SSH. Every action — trivial or not — goes through the agent's API.
 - **Approval is mandatory.** Scripts require explicit target-owner approval before they can run. No silent sync, no auto-run-on-push.

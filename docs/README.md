@@ -33,7 +33,9 @@ Two-process distributed system:
 
 All communication between the control station and an agent travels through an SSH tunnel. No agent port is ever exposed on the network. The only inbound port required on a target machine is SSH (22).
 
-See `ARCHITECTURE.md` for the full design.
+See [`dev/ARCHITECTURE.md`](dev/ARCHITECTURE.md) for the full design, and
+[`guides/`](guides/) for end-user, target-owner, admin, and operator
+documentation.
 
 ## Initial feature set
 
@@ -66,8 +68,8 @@ Shipped as default scripts that target owners can opt into:
 | Web framework (both sides) | FastAPI |
 | Frontend | Jinja2 templates + HTMX + minimal vanilla JS |
 | Database | SQLite via SQLAlchemy + Alembic migrations |
-| Auth | `python-jose` (JWT), `passlib[bcrypt]` (passwords) |
-| SSH | `asyncssh` (preferred, native async) or `paramiko` |
+| Auth | HS256 JWT (issued directly), `bcrypt` (passwords) |
+| SSH | `asyncssh` (native async) |
 | Reverse proxy / TLS | nginx |
 | Process management | Docker + Docker Compose, supervised by systemd |
 | Packaging | PyPI (`control-station-lite`, `control-station-lite[agent]`) |
@@ -98,8 +100,11 @@ control-station-lite/
 │   └── setup.sh           # NAS bootstrap
 ├── tests/
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   └── TASKS.md
+│   ├── README.md            # this overview
+│   ├── guides/              # user / target-owner / admin / operator guides
+│   ├── dev/
+│   │   └── ARCHITECTURE.md  # authoritative design
+│   └── agent_ref/           # contributor working docs (TASKS, STATUS, conventions…)
 ├── pyproject.toml
 └── README.md
 ```

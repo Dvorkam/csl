@@ -5,12 +5,16 @@ Project conventions for AI coding agents and human contributors. Keep this file 
 **What this project is:** A self-hosted web service for controlling LAN machines through an
 approval-gated agent. Key docs:
 
+Docs are split into three buckets: **user** (`docs/` + `docs/guides/`), **dev**
+(`docs/dev/`), and **agent/working** (`docs/agent_ref/`).
+
 | Doc | Purpose |
 | --- | --- |
 | `docs/README.md` | Project overview and goals |
-| `docs/ARCHITECTURE.md` | Full design — **authoritative**; wins over everything else |
-| `docs/TASKS.md` | Numbered implementation backlog |
-| `docs/STATUS.md` | Current task, next task, recent completions — read this first |
+| `docs/guides/` | End-user, target-owner, admin, and operator guides |
+| `docs/dev/ARCHITECTURE.md` | Full design — **authoritative**; wins over everything else |
+| `docs/agent_ref/TASKS.md` | Numbered implementation backlog |
+| `docs/agent_ref/STATUS.md` | Current task, next task, recent completions — read this first |
 | `docs/agent_ref/env.md` | **This machine's** OS, tools, quirks (gitignored; copy from `env.example.md`) |
 | `docs/agent_ref/workflow.md` | Branch naming, commit format, testing rules, CI layout |
 | `docs/agent_ref/conventions.md` | Code style, type hints, SPDX headers, architecture constraints |

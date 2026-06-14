@@ -2,9 +2,9 @@
 
 ## One task at a time
 
-Tasks live in `docs/TASKS.md` and are numbered (e.g. `1.5`). For each task:
+Tasks live in `docs/agent_ref/TASKS.md` and are numbered (e.g. `1.5`). For each task:
 
-1. Read the task and any relevant section of `docs/ARCHITECTURE.md` it touches.
+1. Read the task and any relevant section of `docs/dev/ARCHITECTURE.md` it touches.
 2. Create a branch: `feature/task-1.5-short-description`.
 3. Implement the change.
 4. Add tests per the testing rules below.
@@ -22,8 +22,8 @@ Tasks live in `docs/TASKS.md` and are numbered (e.g. `1.5`). For each task:
    - `feat(agent): implement approval state machine [Task 1.5]`
    - `fix(server): handle expired refresh token edge case [Task 3.5]`
    - `docs: clarify approval flow in architecture [Task 3.3]`
-8. Tick the box in `docs/TASKS.md` in the same commit.
-9. Update `docs/STATUS.md` (current task → completed, set next task as current).
+8. Tick the box in `docs/agent_ref/TASKS.md` in the same commit.
+9. Update `docs/agent_ref/STATUS.md` (current task → completed, set next task as current).
 
 One task = one commit by default. Split only if the task has clearly separable steps.
 

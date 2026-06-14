@@ -14,7 +14,7 @@
 #
 # Idempotent: rerunning is safe and never destroys data. Existing secrets,
 # certificates and the database are left untouched; only missing pieces are
-# created. See docs/ARCHITECTURE.md §9.4.
+# created. See docs/dev/ARCHITECTURE.md §9.4.
 #
 # Overridable via environment (defaults in parentheses) — used by the bats
 # suite to run against temp dirs with stubbed docker/systemctl:
@@ -22,12 +22,17 @@
 #   CSL_INSTALL_DIR   (/opt/control-station-lite)      staged deploy files
 #   CSL_SYSTEMD_DIR   (/etc/systemd/system)            unit install location
 #   CSL_CERT_HOSTNAME (prompted)                        CN for the self-signed cert
+#   CSL_CONTAINER_UID (999)                             uid:gid the app container runs as
 #   DOCKER / SYSTEMCTL / OPENSSL                        tool overrides
 set -euo pipefail
 
 DATA_DIR="${CSL_DATA_DIR:-/var/lib/control-station-lite}"
 INSTALL_DIR="${CSL_INSTALL_DIR:-/opt/control-station-lite}"
 SYSTEMD_DIR="${CSL_SYSTEMD_DIR:-/etc/systemd/system}"
+# The prod image runs as a non-root user with this pinned uid/gid (see
+# deploy/Dockerfile). The bind-mounted data dirs must be owned by it so the
+# container can read the master key and write the database.
+CONTAINER_UID="${CSL_CONTAINER_UID:-999}"
 DOCKER="${DOCKER:-docker}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 OPENSSL="${OPENSSL:-openssl}"
@@ -58,6 +63,17 @@ ensure_dirs() {
         mkdir -p "${DATA_DIR}/${sub}"
     done
     chmod 700 "${DATA_DIR}/secrets"
+}
+
+# Give the non-root app container (uid ${CONTAINER_UID}) ownership of the dirs
+# and files it must read/write through the bind mounts. Run AFTER secrets/certs
+# are generated so the files themselves (not just the dirs) are reassigned.
+# certs/ is left root-owned — nginx's master process runs as root and reads it.
+fix_ownership() {
+    log "Setting data ownership to uid ${CONTAINER_UID} (non-root container user)"
+    chown -R "${CONTAINER_UID}:${CONTAINER_UID}" \
+        "${DATA_DIR}/db" "${DATA_DIR}/scripts" "${DATA_DIR}/secrets" "${DATA_DIR}/logs" \
+        || warn "could not chown data dirs to ${CONTAINER_UID} (run as root) — the container may fail to read the master key or write the database"
 }
 
 # --- 3. secrets (never overwritten) ----------------------------------------
@@ -163,6 +179,7 @@ main() {
     ensure_dirs
     generate_secrets
     generate_cert
+    fix_ownership
     stage_files
     install_service
     create_admin

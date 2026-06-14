@@ -49,7 +49,7 @@ the server and agent configure their own handlers at startup; modules just emit 
 1. Add the field to the appropriate `*Section` Pydantic model in `agent/config.py` with a default.
 2. If it's a `Path`: add `expanduser()` in the section's `_expand_paths` model validator.
 3. Update `_write_config()` in `cli/cmd_init.py` so `csl-agent init` writes the default into new config files.
-4. Update the `config.yaml` example in `docs/ARCHITECTURE.md` §6.2.
+4. Update the `config.yaml` example in `docs/dev/ARCHITECTURE.md` §6.2 (and the agent config reference in `docs/guides/target-owner.md`).
 5. Add a test in `tests/unit/agent/test_config.py` asserting the default value.
 
 **Data flow rule:** Command handlers (`cmd_init`, `cmd_setup`, …) call `load_config()` once at entry and pass the result down. Helper functions must not call `load_config()` internally — that hides dependencies and creates bootstrap ordering surprises.
